@@ -19,13 +19,41 @@ const props = defineProps({
 
 const emit = defineEmits(['completed', 'next-item', 'finish'])
 
-const order = ref(props.item.steps.map((step) => step.id))
+function shuffle(values) {
+  const result = [...values]
+  for (let index = result.length - 1; index > 0; index--) {
+    const randomIndex = Math.floor(Math.random() * (index + 1))
+    ;[result[index], result[randomIndex]] = [result[randomIndex], result[index]]
+  }
+  return result
+}
+
+function sameOrder(a, b) {
+  return a.length === b.length && a.every((id, index) => id === b[index])
+}
+
+// Eine Lernaufgabe darf nie bereits geloest starten: ein einzelner Fisher-
+// Yates-Shuffle mischt die Anzeigereihenfolge. Trifft dieser eine Versuch
+// zufaellig genau correctOrder, werden deterministisch die ersten beiden
+// IDs getauscht - kein erneutes Shuffeln, keine unbeschraenkte Schleife,
+// garantierte Terminierung.
+function shuffledStartOrder(item) {
+  const stepIds = item.steps.map((step) => step.id)
+  if (stepIds.length <= 1) return stepIds
+  const candidate = shuffle(stepIds)
+  if (sameOrder(candidate, item.correctOrder)) {
+    ;[candidate[0], candidate[1]] = [candidate[1], candidate[0]]
+  }
+  return candidate
+}
+
+const order = ref(shuffledStartOrder(props.item))
 const checked = ref(false)
 
 watch(
   () => props.item,
   (item) => {
-    order.value = item.steps.map((step) => step.id)
+    order.value = shuffledStartOrder(item)
     checked.value = false
   },
 )
@@ -63,6 +91,8 @@ function check() {
   checked.value = true
   emit('completed', { id: props.item.id, correct: isCorrect.value })
 }
+
+const correctOrderSteps = computed(() => props.item.correctOrder.map((id) => stepById.value[id]))
 
 const misplacedStepFeedback = computed(() => {
   if (!checked.value || !props.item.stepFeedback) return []
@@ -120,9 +150,18 @@ function nextItem() {
 
     <div v-if="checked" class="feedback-box">
       <p v-if="isCorrect" class="feedback-correct"><span aria-hidden="true">✓</span> Richtig.</p>
-      <p v-else class="feedback-wrong">
-        <span aria-hidden="true">✗</span> Nicht ganz. Die korrekte Reihenfolge ist markiert.
-      </p>
+      <template v-else>
+        <p class="feedback-wrong">
+          <span aria-hidden="true">✗</span> Nicht ganz. Die richtige Reihenfolge ist unten markiert und vollständig aufgeführt.
+        </p>
+
+        <div class="correct-order-reveal">
+          <p class="correct-order-label">So wäre die richtige Reihenfolge:</p>
+          <ol class="correct-order-list">
+            <li v-for="step in correctOrderSteps" :key="step.id">{{ step.label }}</li>
+          </ol>
+        </div>
+      </template>
 
       <div v-for="entry in misplacedStepFeedback" :key="entry.step.id" class="explanation">
         <strong>{{ entry.step.label }}:</strong> {{ entry.text }}
