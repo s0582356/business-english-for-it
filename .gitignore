@@ -1,0 +1,46 @@
+# This repository versions ONLY the Business English app itself.
+#
+# The repository root also contains original course materials (Woche_*,
+# Prüfungsvorbereitung, test_yourself), private internal analyses
+# (ANALYSE_*.md, KNOWLEDGE_MAP.md, PROJECT_REVIEW_001.md,
+# DOKUMENTATION_BESTANDSANALYSE.md) and other project-management documents.
+# Per PUBLIC_PRIVATE_POLICY.md, original materials and private learning
+# artefacts must never be put under version control - not even locally,
+# and regardless of whether this repository is ever pushed anywhere.
+#
+# Rather than trying to list every private file individually (and risking
+# a new one slipping through unnoticed), this file default-denies
+# everything at the repository root and explicitly allow-lists only the
+# application itself.
+
+/*
+!/.gitignore
+!/package.json
+!/package-lock.json
+!/vite.config.js
+!/index.html
+!/.claude
+!/src
+
+# Within the allow-listed app folders, still exclude build output,
+# dependencies, editor/OS files, and any private local content that might
+# be placed there.
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Private local study material (never committed, never bundled)
+private/
+src/data/private/
