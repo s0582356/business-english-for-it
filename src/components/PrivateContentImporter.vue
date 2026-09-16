@@ -1,26 +1,24 @@
 <script setup>
 import { ref } from 'vue'
-import { fingerprintFile } from '../utils/fingerprint.js'
-import { validateContentPackage } from '../utils/contentValidation.js'
+import { importLibraryFiles } from '../utils/libraryImport.js'
 
-const emit = defineEmits(['items-loaded'])
+const props = defineProps({
+  currentRegistry: {
+    type: Object,
+    default: () => ({ libraryByAreaId: {}, conflictsByAreaId: {} }),
+  },
+})
+
+const emit = defineEmits(['libraries-loaded'])
 const fileInput = ref(null)
 
 async function handleFileChange(event) {
-  const file = event.target.files?.[0]
-  if (!file) return
+  const files = event.target.files
+  if (!files || files.length === 0) return
 
-  try {
-    const [fileContent, fingerprint] = await Promise.all([file.text(), fingerprintFile(file)])
-    const parsedData = JSON.parse(fileContent)
-    const items = validateContentPackage(parsedData)
-
-    emit('items-loaded', { items, fileName: file.name, fingerprint })
-    event.target.value = ''
-  } catch (error) {
-    alert(`Import fehlgeschlagen: ${error.message}`)
-    event.target.value = ''
-  }
+  const result = await importLibraryFiles(files, props.currentRegistry)
+  emit('libraries-loaded', result)
+  event.target.value = ''
 }
 
 function openFilePicker() {
@@ -31,21 +29,23 @@ defineExpose({ openFilePicker })
 </script>
 
 <template>
-  <section class="import-card" aria-label="Privates Lernpaket laden">
+  <section class="import-card" aria-label="Lernbibliotheken laden">
     <div>
-      <h2>Privates Lernpaket laden</h2>
+      <h2>Lernbibliotheken laden</h2>
       <p>
-        Wähle eine lokale JSON-Datei aus. Sie wird nur im Browser gelesen,
-        nicht hochgeladen und nicht gespeichert.
+        Wähle eine oder mehrere private JSON-Dateien aus. Jede Datei wird
+        einzeln geprüft und nur im Browser gelesen - nicht hochgeladen und
+        nicht gespeichert.
       </p>
     </div>
 
-    <button class="import-button" type="button" @click="openFilePicker">JSON auswählen</button>
+    <button class="import-button" type="button" @click="openFilePicker">Lernbibliotheken auswählen</button>
     <input
       ref="fileInput"
       class="visually-hidden"
       type="file"
       accept=".json,application/json"
+      multiple
       @change="handleFileChange"
     />
   </section>

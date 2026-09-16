@@ -4,7 +4,11 @@ import PrivateContentImporter from './components/PrivateContentImporter.vue'
 import ScoreBox from './components/ScoreBox.vue'
 import ChoiceCard from './components/ChoiceCard.vue'
 import OrderedStepsTrainer from './components/OrderedStepsTrainer.vue'
-import { getRunSummary, saveRunSummary } from './utils/progressStorage.js'
+import { flattenLibraryItems } from './utils/libraryImport.js'
+import { recordItemResult, saveLastPosition } from './utils/progressStorage.js'
+
+// Nur dieser Bereich ist in diesem Slice aktiv - Bereichsnavigation folgt später.
+const ACTIVE_AREA_ID = 'telephoning'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
 
@@ -41,10 +45,9 @@ const areas = [
 
 const view = ref('home') // 'home' | 'run' | 'result'
 
+const libraryRegistry = ref({ libraryByAreaId: {}, conflictsByAreaId: {} })
+const importReport = ref(null)
 const allItems = ref([])
-const fileName = ref(null)
-const fingerprint = ref(null)
-const lastRunSummary = ref(null)
 
 const runItems = ref([])
 const isReviewMode = ref(false)
@@ -81,17 +84,26 @@ function startRun(items, { reviewMode = false } = {}) {
   view.value = 'run'
 }
 
-function onItemsLoaded({ items, fileName: importedFileName, fingerprint: importedFingerprint }) {
-  allItems.value = items
-  fileName.value = importedFileName
-  fingerprint.value = importedFingerprint
-  lastRunSummary.value = getRunSummary(importedFingerprint)
-  startRun(items)
+function onLibrariesLoaded(result) {
+  libraryRegistry.value = { libraryByAreaId: result.libraryByAreaId, conflictsByAreaId: result.conflictsByAreaId }
+  importReport.value = result.report
+
+  const activeEntry = result.libraryByAreaId[ACTIVE_AREA_ID]
+  if (activeEntry) {
+    allItems.value = flattenLibraryItems(activeEntry.library)
+    startRun(allItems.value)
+  }
 }
 
 function recordAnswer(id, correct) {
   answeredLog.value.push({ id, correct })
   if (correct) score.value++
+
+  recordItemResult(ACTIVE_AREA_ID, id, correct)
+  const item = currentItem.value
+  if (item?.lessonId && item?.scenarioId) {
+    saveLastPosition(ACTIVE_AREA_ID, { lessonId: item.lessonId, scenarioId: item.scenarioId, itemId: item.id })
+  }
 }
 
 function selectAnswer(option) {
@@ -113,16 +125,6 @@ function nextItem() {
 
 function finishRun() {
   view.value = 'result'
-  if (fingerprint.value) {
-    saveRunSummary(fingerprint.value, {
-      fileName: fileName.value,
-      itemCount: totalRunItems.value,
-      score: score.value,
-      incorrectItemIds: incorrectItemIds.value,
-      completedAt: new Date().toISOString(),
-    })
-    lastRunSummary.value = getRunSummary(fingerprint.value)
-  }
 }
 
 function repeatIncorrect() {
@@ -138,10 +140,6 @@ function restartFullRun() {
 
 function backToHome() {
   view.value = 'home'
-}
-
-function formatSavedAt(value) {
-  return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 </script>
 
@@ -181,18 +179,31 @@ function formatSavedAt(value) {
         </article>
       </div>
 
-      <section v-if="lastRunSummary" class="last-run-card" aria-label="Letzte Lernrunde">
-        <p>
-          Zuletzt geübt: <strong>{{ lastRunSummary.fileName }}</strong> ·
-          {{ lastRunSummary.score }}/{{ lastRunSummary.itemCount }} richtig ·
-          <time :datetime="lastRunSummary.completedAt">{{ formatSavedAt(lastRunSummary.completedAt) }}</time>
+      <PrivateContentImporter :current-registry="libraryRegistry" @libraries-loaded="onLibrariesLoaded" />
+
+      <section v-if="importReport" class="import-report" aria-label="Importbericht">
+        <p v-for="entry in importReport.loaded" :key="'loaded-' + entry.fileName" class="explanation">
+          Geladen: {{ entry.areaId }} ({{ entry.fileName }})
+        </p>
+        <p v-for="entry in importReport.upgrades" :key="'upgrade-' + entry.fileName" class="explanation">
+          Aktualisiert auf Version {{ entry.libraryVersion }}: {{ entry.areaId }}
+        </p>
+        <p v-for="entry in importReport.duplicates" :key="'dup-' + entry.fileName" class="explanation">
+          Duplikat übersprungen: {{ entry.fileName }}
+        </p>
+        <p v-for="entry in importReport.ignored" :key="'ignored-' + entry.fileName" class="explanation">
+          Ignoriert (ältere Version als bereits geladen): {{ entry.fileName }}
+        </p>
+        <p v-for="entry in importReport.conflicts" :key="'conflict-' + entry.fileName" class="feedback-wrong">
+          Konflikt bei „{{ entry.areaId }}": mehrere unterschiedliche Lernbibliotheken erkannt.
+        </p>
+        <p v-for="entry in importReport.errors" :key="'error-' + entry.fileName" class="feedback-wrong">
+          Fehler in {{ entry.fileName }}: {{ entry.reason }}
         </p>
       </section>
 
-      <PrivateContentImporter @items-loaded="onItemsLoaded" />
-
       <p v-if="allItems.length === 0" class="empty-hint">
-        Noch kein Lernpaket geladen. Wähle oben eine private JSON-Datei mit Telephoning-Items aus, um zu starten.
+        Noch keine Lernbibliothek geladen. Wähle oben deine private Telephoning-Lernbibliothek aus, um zu starten.
       </p>
     </section>
 
