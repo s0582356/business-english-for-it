@@ -4,11 +4,9 @@ import PrivateContentImporter from './components/PrivateContentImporter.vue'
 import ScoreBox from './components/ScoreBox.vue'
 import ChoiceCard from './components/ChoiceCard.vue'
 import OrderedStepsTrainer from './components/OrderedStepsTrainer.vue'
-import { flattenLibraryItems } from './utils/libraryImport.js'
-import { recordItemResult, saveLastPosition } from './utils/progressStorage.js'
-
-// Nur dieser Bereich ist in diesem Slice aktiv - Bereichsnavigation folgt später.
-const ACTIVE_AREA_ID = 'telephoning'
+import GapInputTrainer from './components/GapInputTrainer.vue'
+import LearningNavigator from './components/LearningNavigator.vue'
+import { recordItemResult, saveLastPosition, getAreaItemStatuses } from './utils/progressStorage.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
 
@@ -34,20 +32,16 @@ function toggleTheme() {
   window.localStorage.setItem(THEME_STORAGE_KEY, theme.value)
 }
 
-// Langfristige V1-Bereiche. Nur "telephoning" ist in diesem Slice aktiv -
-// die anderen werden bewusst als "kommt in V1" markiert, nicht verborgen.
-const areas = [
-  { id: 'vocabulary', icon: '📚', title: 'Vocabulary & Phrases', available: false },
-  { id: 'socialising', icon: '💬', title: 'Socialising & Opinions', available: false },
-  { id: 'telephoning', icon: '📞', title: 'Business Telephoning', available: true },
-  { id: 'email', icon: '✉️', title: 'Email Writing', available: false },
-]
-
-const view = ref('home') // 'home' | 'run' | 'result'
+const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result'
 
 const libraryRegistry = ref({ libraryByAreaId: {}, conflictsByAreaId: {} })
 const importReport = ref(null)
+const importer = ref(null)
+const selectedAreaId = ref(null)
+const selectedLessonId = ref(null)
+const activeAreaId = ref(null)
 const allItems = ref([])
+const itemStatuses = ref({})
 
 const runItems = ref([])
 const isReviewMode = ref(false)
@@ -87,22 +81,52 @@ function startRun(items, { reviewMode = false } = {}) {
 function onLibrariesLoaded(result) {
   libraryRegistry.value = { libraryByAreaId: result.libraryByAreaId, conflictsByAreaId: result.conflictsByAreaId }
   importReport.value = result.report
+  itemStatuses.value = selectedAreaId.value ? getAreaItemStatuses(selectedAreaId.value) : {}
+  view.value = 'home'
+}
 
-  const activeEntry = result.libraryByAreaId[ACTIVE_AREA_ID]
-  if (activeEntry) {
-    allItems.value = flattenLibraryItems(activeEntry.library)
-    startRun(allItems.value)
-  }
+function openArea(areaId) {
+  if (!libraryRegistry.value.libraryByAreaId[areaId] || libraryRegistry.value.conflictsByAreaId[areaId]) return
+  selectedAreaId.value = areaId
+  selectedLessonId.value = null
+  itemStatuses.value = getAreaItemStatuses(areaId)
+  view.value = 'lessons'
+}
+
+function openLesson(lessonId) {
+  selectedLessonId.value = lessonId
+  view.value = 'scenarios'
+}
+
+function startScenario(scenarioId) {
+  const lesson = libraryRegistry.value.libraryByAreaId[selectedAreaId.value]?.library.lessons.find((candidate) => candidate.lessonId === selectedLessonId.value)
+  const scenario = lesson?.scenarios.find((candidate) => candidate.scenarioId === scenarioId)
+  if (!scenario) return
+  activeAreaId.value = selectedAreaId.value
+  allItems.value = scenario.items
+  startRun(scenario.items)
+}
+
+function backToAreas() {
+  selectedAreaId.value = null
+  selectedLessonId.value = null
+  view.value = 'home'
+}
+
+function backToLessons() {
+  selectedLessonId.value = null
+  view.value = 'lessons'
 }
 
 function recordAnswer(id, correct) {
   answeredLog.value.push({ id, correct })
   if (correct) score.value++
 
-  recordItemResult(ACTIVE_AREA_ID, id, correct)
+  recordItemResult(activeAreaId.value, id, correct)
+  itemStatuses.value = { ...itemStatuses.value, [id]: { status: correct ? 'correct' : 'incorrect' } }
   const item = currentItem.value
   if (item?.lessonId && item?.scenarioId) {
-    saveLastPosition(ACTIVE_AREA_ID, { lessonId: item.lessonId, scenarioId: item.scenarioId, itemId: item.id })
+    saveLastPosition(activeAreaId.value, { lessonId: item.lessonId, scenarioId: item.scenarioId, itemId: item.id })
   }
 }
 
@@ -114,6 +138,10 @@ function selectAnswer(option) {
 }
 
 function onOrderedCompleted({ id, correct }) {
+  recordAnswer(id, correct)
+}
+
+function onGapCompleted({ id, correct }) {
   recordAnswer(id, correct)
 }
 
@@ -139,7 +167,7 @@ function restartFullRun() {
 }
 
 function backToHome() {
-  view.value = 'home'
+  view.value = selectedLessonId.value ? 'scenarios' : 'home'
 }
 </script>
 
@@ -158,56 +186,43 @@ function backToHome() {
 
       <p class="eyebrow">Business English</p>
       <h1>Deine persönliche Business-English-Lernplattform</h1>
-      <p class="intro">
-        Vokabular, Socialising, Telefonate und E-Mails für Studium, Praktikum und IT-Beruf.
-        Dieser erste Bereich: <strong>Business Telephoning</strong>.
-      </p>
+      <p class="intro">Vokabular, Socialising, Telefonate und E-Mails für Studium, Praktikum und IT-Beruf.</p>
     </header>
 
     <section v-if="view === 'home'" class="home-view">
-      <div class="area-grid">
-        <article
-          v-for="area in areas"
-          :key="area.id"
-          class="area-card"
-          :class="{ 'area-card-disabled': !area.available }"
-        >
-          <span class="area-card-icon" aria-hidden="true">{{ area.icon }}</span>
-          <h2>{{ area.title }}</h2>
-          <span v-if="area.available" class="area-card-badge area-card-badge-active">Aktiv</span>
-          <span v-else class="area-card-badge area-card-badge-soon">Kommt in V1</span>
-        </article>
-      </div>
-
-      <PrivateContentImporter :current-registry="libraryRegistry" @libraries-loaded="onLibrariesLoaded" />
-
+      <LearningNavigator
+        :library-by-area-id="libraryRegistry.libraryByAreaId"
+        :conflicts-by-area-id="libraryRegistry.conflictsByAreaId"
+        :item-statuses="itemStatuses"
+        @open-area="openArea"
+        @request-import="importer?.openFilePicker()"
+      />
+      <PrivateContentImporter ref="importer" :current-registry="libraryRegistry" @libraries-loaded="onLibrariesLoaded" />
       <section v-if="importReport" class="import-report" aria-label="Importbericht">
-        <p v-for="entry in importReport.loaded" :key="'loaded-' + entry.fileName" class="explanation">
-          Geladen: {{ entry.areaId }} ({{ entry.fileName }})
-        </p>
-        <p v-for="entry in importReport.upgrades" :key="'upgrade-' + entry.fileName" class="explanation">
-          Aktualisiert auf Version {{ entry.libraryVersion }}: {{ entry.areaId }}
-        </p>
-        <p v-for="entry in importReport.duplicates" :key="'dup-' + entry.fileName" class="explanation">
-          Duplikat übersprungen: {{ entry.fileName }}
-        </p>
-        <p v-for="entry in importReport.ignored" :key="'ignored-' + entry.fileName" class="explanation">
-          Ignoriert (ältere Version als bereits geladen): {{ entry.fileName }}
-        </p>
-        <p v-for="entry in importReport.conflicts" :key="'conflict-' + entry.fileName" class="feedback-wrong">
-          Konflikt bei „{{ entry.areaId }}": mehrere unterschiedliche Lernbibliotheken erkannt.
-        </p>
-        <p v-for="entry in importReport.errors" :key="'error-' + entry.fileName" class="feedback-wrong">
-          Fehler in {{ entry.fileName }}: {{ entry.reason }}
-        </p>
+        <p v-for="entry in importReport.loaded" :key="'loaded-' + entry.fileName" class="explanation">Geladen: {{ entry.areaId }} ({{ entry.fileName }})</p>
+        <p v-for="entry in importReport.upgrades" :key="'upgrade-' + entry.fileName" class="explanation">Aktualisiert auf Version {{ entry.libraryVersion }}: {{ entry.areaId }}</p>
+        <p v-for="entry in importReport.duplicates" :key="'dup-' + entry.fileName" class="explanation">Duplikat übersprungen: {{ entry.fileName }}</p>
+        <p v-for="entry in importReport.ignored" :key="'ignored-' + entry.fileName" class="explanation">Ignoriert (ältere Version als bereits geladen): {{ entry.fileName }}</p>
+        <p v-for="entry in importReport.conflicts" :key="'conflict-' + entry.fileName" class="feedback-wrong">Konflikt bei „{{ entry.areaId }}": mehrere unterschiedliche Lernbibliotheken erkannt.</p>
+        <p v-for="entry in importReport.errors" :key="'error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }}</p>
       </section>
-
-      <p v-if="allItems.length === 0" class="empty-hint">
-        Noch keine Lernbibliothek geladen. Wähle oben deine private Telephoning-Lernbibliothek aus, um zu starten.
-      </p>
     </section>
 
+    <LearningNavigator
+      v-else-if="view === 'lessons' || view === 'scenarios'"
+      :library-by-area-id="libraryRegistry.libraryByAreaId"
+      :conflicts-by-area-id="libraryRegistry.conflictsByAreaId"
+      :item-statuses="itemStatuses"
+      :selected-area-id="selectedAreaId"
+      :selected-lesson-id="view === 'scenarios' ? selectedLessonId : null"
+      @open-lesson="openLesson"
+      @start-scenario="startScenario"
+      @back-to-areas="backToAreas"
+      @back-to-lessons="backToLessons"
+    />
+
     <section v-else-if="view === 'run' && currentItem" class="quiz-layout">
+      <button type="button" class="back-button quiz-back-button" @click="backToHome">← Zur Szenarioübersicht</button>
       <ScoreBox :current-item-index="currentIndex" :total-items="totalRunItems" :score="score" />
 
       <ChoiceCard
@@ -222,13 +237,27 @@ function backToHome() {
       />
 
       <OrderedStepsTrainer
-        v-else
+        v-else-if="currentItem.type === 'ordered'"
         :item="currentItem"
         :is-last-item="isLastItem"
         @completed="onOrderedCompleted"
         @next-item="nextItem"
         @finish="finishRun"
       />
+
+      <GapInputTrainer
+        v-else-if="currentItem.type === 'gap'"
+        :item="currentItem"
+        :is-last-item="isLastItem"
+        @completed="onGapCompleted"
+        @next-item="nextItem"
+        @finish="finishRun"
+      />
+
+      <section v-else class="question-card unsupported-item" role="alert">
+        <h2>Dieser Aufgabentyp wird nicht unterstützt.</h2>
+        <p class="explanation">Die Aufgabe kann nicht sicher angezeigt werden. Bitte kehre zur Szenarioübersicht zurück.</p>
+      </section>
     </section>
 
     <section v-else-if="view === 'result'" class="result-card">

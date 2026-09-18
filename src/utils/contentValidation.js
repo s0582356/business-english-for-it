@@ -1,14 +1,14 @@
 // Gemeinsamer, bewusst schlanker Item-Rahmen für private Lernpakete.
 //
 // Ebenen sauber getrennt:
-// - "type" ist ausschliesslich der technische Renderer ("choice" | "ordered").
+// - "type" ist ausschliesslich der technische Renderer ("choice" | "ordered" | "gap").
 // - "intent" ist die didaktische Absicht (z. B. "telephone-opening") und wird
 //   nicht technisch ausgewertet - reines Anzeige-/Ordnungsmerkmal.
 // - "category" ist der Lernbereich (z. B. "Business Telephoning").
 //
 // Kein Universalschema: jeder Typ hat einen eigenen, kleinen Validator.
 
-export const SUPPORTED_TYPES = ['choice', 'ordered']
+export const SUPPORTED_TYPES = ['choice', 'ordered', 'gap']
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== ''
@@ -134,10 +134,18 @@ function validateOrderedItem(item, index) {
   }
 }
 
+function validateGapItem(item, index) {
+  if (!isNonEmptyString(item.prompt)) throw new Error(`Item ${index + 1} (gap): "prompt" fehlt oder ist ungültig.`)
+  if (!Array.isArray(item.acceptedAnswers) || item.acceptedAnswers.length === 0 || !item.acceptedAnswers.every(isNonEmptyString)) throw new Error(`Item ${index + 1} (gap): "acceptedAnswers" muss mindestens einen nicht-leeren Text enthalten.`)
+  if (!isNonEmptyString(item.explanation)) throw new Error(`Item ${index + 1} (gap): "explanation" fehlt oder ist ungültig.`)
+  return { id: isNonEmptyString(item.id) ? item.id : `gap-${index + 1}`, type: 'gap', intent: item.intent ?? null, category: item.category ?? null, prompt: item.prompt, acceptedAnswers: [...item.acceptedAnswers], explanation: item.explanation, memoryHint: validateMemoryHint(item.memoryHint, index) }
+}
+
 export function validateItem(item, index) {
   validateCommonFields(item, index)
   if (item.type === 'choice') return validateChoiceItem(item, index)
-  return validateOrderedItem(item, index)
+  if (item.type === 'ordered') return validateOrderedItem(item, index)
+  return validateGapItem(item, index)
 }
 
 export function validateContentPackage(data) {

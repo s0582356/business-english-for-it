@@ -81,10 +81,6 @@ describe('validateItem - Typprüfung', () => {
     expect(() => validateItem(broken, 2)).toThrow(/Item 3.*"choice" oder "ordered"/)
   })
 
-  it('lehnt "gap" als Typ ab (noch nicht implementiert)', () => {
-    const broken = { ...validOrdered, type: 'gap' }
-    expect(() => validateItem(broken, 0)).toThrow(/"choice" oder "ordered"/)
-  })
 })
 
 describe('validateContentPackage', () => {
