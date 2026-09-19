@@ -6,7 +6,7 @@ import ChoiceCard from './components/ChoiceCard.vue'
 import OrderedStepsTrainer from './components/OrderedStepsTrainer.vue'
 import GapInputTrainer from './components/GapInputTrainer.vue'
 import LearningNavigator from './components/LearningNavigator.vue'
-import { recordItemResult, saveLastPosition, getAreaItemStatuses } from './utils/progressStorage.js'
+import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveResumeTarget } from './utils/progressStorage.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
 
@@ -42,6 +42,22 @@ const selectedLessonId = ref(null)
 const activeAreaId = ref(null)
 const allItems = ref([])
 const itemStatuses = ref({})
+const progressTick = ref(0)
+
+// Neu berechnet, sobald sich die geladenen Libraries aendern oder eine neue
+// Antwort gespeichert wird (progressTick). Nur Bereiche mit geladener,
+// konfliktfreier Library und einer gegen die aktuelle Library gueltigen
+// lastPosition tauchen hier auf - siehe resolveResumeTarget.
+const resumeByAreaId = computed(() => {
+  progressTick.value
+  const result = {}
+  for (const [areaId, entry] of Object.entries(libraryRegistry.value.libraryByAreaId)) {
+    if (libraryRegistry.value.conflictsByAreaId[areaId]) continue
+    const target = resolveResumeTarget(entry.library, getLastPosition(areaId))
+    if (target) result[areaId] = target
+  }
+  return result
+})
 
 const runItems = ref([])
 const isReviewMode = ref(false)
@@ -93,6 +109,40 @@ function openArea(areaId) {
   view.value = 'lessons'
 }
 
+// Springt direkt zur gespeicherten Position eines Bereichs. Faellt bei
+// teilweise ungueltigen IDs stufenweise zurueck (siehe resolveResumeTarget)
+// und faellt bei komplett fehlendem/ungueltigem Fortschritt auf den
+// normalen Bereichseinstieg zurueck - kein Crash, keine Sonderbehandlung.
+function resumeArea(areaId) {
+  const entry = libraryRegistry.value.libraryByAreaId[areaId]
+  if (!entry || libraryRegistry.value.conflictsByAreaId[areaId]) return
+
+  const target = resolveResumeTarget(entry.library, getLastPosition(areaId))
+  if (!target) {
+    openArea(areaId)
+    return
+  }
+
+  selectedAreaId.value = areaId
+  selectedLessonId.value = target.lessonId
+  itemStatuses.value = getAreaItemStatuses(areaId)
+
+  if (!target.scenarioId) {
+    view.value = 'scenarios'
+    return
+  }
+
+  const lesson = entry.library.lessons.find((candidate) => candidate.lessonId === target.lessonId)
+  const scenario = lesson.scenarios.find((candidate) => candidate.scenarioId === target.scenarioId)
+  activeAreaId.value = areaId
+  allItems.value = scenario.items
+  startRun(scenario.items)
+  if (target.itemId) {
+    const startIndex = scenario.items.findIndex((item) => item.id === target.itemId)
+    if (startIndex > 0) currentIndex.value = startIndex
+  }
+}
+
 function openLesson(lessonId) {
   selectedLessonId.value = lessonId
   view.value = 'scenarios'
@@ -128,6 +178,7 @@ function recordAnswer(id, correct) {
   if (item?.lessonId && item?.scenarioId) {
     saveLastPosition(activeAreaId.value, { lessonId: item.lessonId, scenarioId: item.scenarioId, itemId: item.id })
   }
+  progressTick.value++
 }
 
 function selectAnswer(option) {
@@ -194,7 +245,9 @@ function backToHome() {
         :library-by-area-id="libraryRegistry.libraryByAreaId"
         :conflicts-by-area-id="libraryRegistry.conflictsByAreaId"
         :item-statuses="itemStatuses"
+        :resume-by-area-id="resumeByAreaId"
         @open-area="openArea"
+        @resume-area="resumeArea"
         @request-import="importer?.openFilePicker()"
       />
       <PrivateContentImporter ref="importer" :current-registry="libraryRegistry" @libraries-loaded="onLibrariesLoaded" />
@@ -298,8 +351,7 @@ function backToHome() {
     </section>
 
     <footer class="app-footer">
-      <span>Business English · V1-Slice</span>
-      <span>Telephoning</span>
+      <span>Business English · V1</span>
     </footer>
   </main>
 </template>

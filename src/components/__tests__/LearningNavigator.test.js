@@ -62,4 +62,35 @@ describe('LearningNavigator', () => {
     await wrapper.get('.back-button').trigger('click')
     expect(wrapper.emitted('back-to-lessons')).toHaveLength(1)
   })
+
+  it('zeigt "Weiterlernen" mit Kontext an und springt direkt zur gespeicherten Position, statt einen zweiten Button zu ergänzen', async () => {
+    const wrapper = mountNavigator({
+      resumeByAreaId: { telephoning: { lessonId: 'lesson-1', lessonTitle: 'Starting a Business Call', scenarioId: 'scenario-b', scenarioTitle: 'Rescheduling', itemId: 'c' } },
+    })
+    const card = wrapper.get('.navigator-card-loaded')
+    expect(card.text()).toContain('Weiter bei: Starting a Business Call · Rescheduling')
+    expect(card.findAll('button')).toHaveLength(1)
+    expect(card.text()).not.toContain('Bereich öffnen')
+
+    await card.get('button').trigger('click')
+    expect(wrapper.emitted('resume-area')).toEqual([['telephoning']])
+    expect(wrapper.emitted('open-area')).toBeUndefined()
+  })
+
+  it('zeigt ohne gespeicherte Position weiterhin nur "Bereich öffnen"', () => {
+    const wrapper = mountNavigator()
+    const card = wrapper.get('.navigator-card-loaded')
+    expect(card.findAll('button')).toHaveLength(1)
+    expect(card.text()).toContain('Bereich öffnen')
+    expect(card.text()).not.toContain('Weiterlernen')
+  })
+
+  it('bietet für einen Konfliktbereich kein Resume an, selbst wenn eine Position übergeben wird', () => {
+    const wrapper = mountNavigator({
+      conflictsByAreaId: { telephoning: { areaId: 'telephoning' } },
+      resumeByAreaId: { telephoning: { lessonId: 'lesson-1', lessonTitle: 'x', scenarioId: 's', scenarioTitle: 'y', itemId: 'c' } },
+    })
+    expect(wrapper.text()).not.toContain('Weiterlernen')
+    expect(wrapper.find('.navigator-card-conflict').find('button').text()).toBe('Lernbibliotheken laden')
+  })
 })

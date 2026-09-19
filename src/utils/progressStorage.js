@@ -45,9 +45,14 @@ function sanitizeItemEntry(entry) {
 
 function sanitizePositionEntry(entry) {
   if (!entry || typeof entry !== 'object') return null
-  if (!isNonEmptyString(entry.lessonId) || !isNonEmptyString(entry.scenarioId) || !isNonEmptyString(entry.itemId)) return null
+  if (!isNonEmptyString(entry.lessonId)) return null
+  if (entry.scenarioId !== undefined && !isNonEmptyString(entry.scenarioId)) return null
+  if (entry.itemId !== undefined && !isNonEmptyString(entry.itemId)) return null
   if (typeof entry.updatedAt !== 'string' || Number.isNaN(Date.parse(entry.updatedAt))) return null
-  return { lessonId: entry.lessonId, scenarioId: entry.scenarioId, itemId: entry.itemId, updatedAt: entry.updatedAt }
+  const safeEntry = { lessonId: entry.lessonId, updatedAt: entry.updatedAt }
+  if (entry.scenarioId !== undefined) safeEntry.scenarioId = entry.scenarioId
+  if (entry.itemId !== undefined) safeEntry.itemId = entry.itemId
+  return safeEntry
 }
 
 function readStore() {
@@ -132,4 +137,31 @@ export function saveLastPosition(areaId, position) {
 export function getLastPosition(areaId) {
   if (!isNonEmptyString(areaId)) return null
   return readStore().lastPosition[areaId] ?? null
+}
+
+// Prueft eine gespeicherte lastPosition gegen die aktuell geladene Library und
+// loest sie auf ein gueltiges Navigationsziel auf. Faellt bei inzwischen
+// entfernten Inhalten stufenweise zurueck (Item -> Szenario-Anfang ->
+// Lektion), statt zu crashen oder Progressdaten zu veraendern. Gibt null
+// zurueck, wenn selbst die Lektion nicht mehr existiert - der Aufrufer
+// faellt dann auf den normalen Bereichseinstieg zurueck.
+export function resolveResumeTarget(library, position) {
+  if (!library || !Array.isArray(library.lessons) || !position) return null
+
+  const lesson = library.lessons.find((candidate) => candidate.lessonId === position.lessonId)
+  if (!lesson) return null
+
+  const scenario = lesson.scenarios?.find((candidate) => candidate.scenarioId === position.scenarioId)
+  if (!scenario) {
+    return { lessonId: lesson.lessonId, lessonTitle: lesson.lessonTitle, scenarioId: null, scenarioTitle: null, itemId: null }
+  }
+
+  const itemExists = scenario.items.some((item) => item.id === position.itemId)
+  return {
+    lessonId: lesson.lessonId,
+    lessonTitle: lesson.lessonTitle,
+    scenarioId: scenario.scenarioId,
+    scenarioTitle: scenario.scenarioTitle,
+    itemId: itemExists ? position.itemId : null,
+  }
 }

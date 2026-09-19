@@ -18,7 +18,7 @@ defineProps({
 <template>
   <aside class="score-card" aria-label="Fortschritt in dieser Lernrunde">
     <h2>Fortschritt</h2>
-    <p>Item {{ currentItemIndex + 1 }} von {{ totalItems }}</p>
+    <p>Aufgabe {{ currentItemIndex + 1 }} von {{ totalItems }}</p>
     <p>Richtig: <strong>{{ score }}</strong></p>
   </aside>
 </template>

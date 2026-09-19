@@ -6,6 +6,7 @@ import {
   getItemStatus,
   getLastPosition,
   recordItemResult,
+  resolveResumeTarget,
   saveLastPosition,
 } from '../progressStorage.js'
 
@@ -93,12 +94,99 @@ describe('lastPosition', () => {
     expect(typeof position.updatedAt).toBe('string')
   })
 
-  it('lehnt eine unvollständige Position ab', () => {
-    expect(saveLastPosition('telephoning', { lessonId: 'x' })).toBe(false)
+  it('behält eine Position mit lessonId allein als Lektions-Fallback', () => {
+    expect(saveLastPosition('telephoning', { lessonId: 'x' })).toBe(true)
+    expect(getLastPosition('telephoning')).toMatchObject({ lessonId: 'x' })
+  })
+
+  it('verwirft Positionen ohne lessonId oder mit ungültigen ID-Typen weiterhin', () => {
+    expect(saveLastPosition('telephoning', {})).toBe(false)
+    expect(saveLastPosition('telephoning', { lessonId: 1 })).toBe(false)
+    expect(saveLastPosition('telephoning', { lessonId: 'x', scenarioId: 1 })).toBe(false)
+    expect(saveLastPosition('telephoning', { lessonId: 'x', itemId: 1 })).toBe(false)
   })
 
   it('liefert null für einen Bereich ohne gespeicherte Position', () => {
     expect(getLastPosition('email-writing')).toBeNull()
+  })
+})
+
+describe('resolveResumeTarget', () => {
+  const library = {
+    lessons: [{
+      lessonId: 'l1', lessonTitle: 'Lesson 1',
+      scenarios: [
+        { scenarioId: 's1', scenarioTitle: 'Scenario 1', items: [{ id: 'i1' }, { id: 'i2' }] },
+      ],
+    }],
+  }
+
+  it('löst eine vollständig gültige Position exakt auf (Fall B)', () => {
+    const target = resolveResumeTarget(library, { lessonId: 'l1', scenarioId: 's1', itemId: 'i2' })
+    expect(target).toEqual({ lessonId: 'l1', lessonTitle: 'Lesson 1', scenarioId: 's1', scenarioTitle: 'Scenario 1', itemId: 'i2' })
+  })
+
+  it('fällt bei entfernter itemId auf den Szenario-Anfang zurück (Fall C)', () => {
+    const target = resolveResumeTarget(library, { lessonId: 'l1', scenarioId: 's1', itemId: 'removed-item' })
+    expect(target).toMatchObject({ lessonId: 'l1', scenarioId: 's1', itemId: null })
+  })
+
+  it('erhält über den Storage-Pfad eine Position ohne itemId und fällt auf den Szenario-Anfang zurück', () => {
+    window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      itemStatus: {},
+      lastPosition: {
+        telephoning: { lessonId: 'l1', scenarioId: 's1', updatedAt: '2026-09-19T10:00:00.000Z' },
+      },
+    }))
+
+    const position = getLastPosition('telephoning')
+    expect(position).toMatchObject({ lessonId: 'l1', scenarioId: 's1' })
+    expect(position).not.toHaveProperty('itemId')
+    expect(resolveResumeTarget(library, position)).toMatchObject({ lessonId: 'l1', scenarioId: 's1', itemId: null })
+  })
+
+  it('erhält über den Storage-Pfad eine Position nur mit lessonId und fällt auf den Lektions-Anfang zurück', () => {
+    window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      itemStatus: {},
+      lastPosition: {
+        telephoning: { lessonId: 'l1', updatedAt: '2026-09-19T10:00:00.000Z' },
+      },
+    }))
+
+    const position = getLastPosition('telephoning')
+    expect(position).toMatchObject({ lessonId: 'l1' })
+    expect(resolveResumeTarget(library, position)).toEqual({ lessonId: 'l1', lessonTitle: 'Lesson 1', scenarioId: null, scenarioTitle: null, itemId: null })
+  })
+
+  it('verwirft über den Storage-Pfad eine Position ohne lessonId und nutzt keinen Resume-Zustand', () => {
+    window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      itemStatus: {},
+      lastPosition: {
+        telephoning: { scenarioId: 's1', itemId: 'i1', updatedAt: '2026-09-19T10:00:00.000Z' },
+      },
+    }))
+
+    expect(getLastPosition('telephoning')).toBeNull()
+  })
+
+  it('fällt bei entferntem Szenario auf den Lektions-Anfang zurück, ohne zu crashen (Fall D)', () => {
+    const target = resolveResumeTarget(library, { lessonId: 'l1', scenarioId: 'removed-scenario', itemId: 'i1' })
+    expect(target).toEqual({ lessonId: 'l1', lessonTitle: 'Lesson 1', scenarioId: null, scenarioTitle: null, itemId: null })
+  })
+
+  it('liefert null bei entfernter Lektion, ohne zu crashen (Fall D)', () => {
+    expect(resolveResumeTarget(library, { lessonId: 'removed-lesson', scenarioId: 's1', itemId: 'i1' })).toBeNull()
+  })
+
+  it('liefert null ohne gespeicherte Position (Fall A)', () => {
+    expect(resolveResumeTarget(library, null)).toBeNull()
+  })
+
+  it('liefert null ohne geladene Library (fehlende Library, Fall E)', () => {
+    expect(resolveResumeTarget(null, { lessonId: 'l1', scenarioId: 's1', itemId: 'i1' })).toBeNull()
   })
 })
 
