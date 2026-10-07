@@ -46,7 +46,7 @@ describe('LearningNavigator', () => {
   it('rendert Lektionen und meldet deren Auswahl', async () => {
     const wrapper = mountNavigator({ selectedAreaId: 'telephoning', itemStatuses: { a: { status: 'correct' } } })
     expect(wrapper.text()).toContain('Starting a Business Call')
-    expect(wrapper.text()).toContain('2 Szenarien · 3 Aufgaben · 1/3 erledigt')
+    expect(wrapper.text()).toContain('2 Szenarien · 3 Aufgaben · 1/3 richtig')
     await wrapper.get('.navigator-list-card').trigger('click')
     expect(wrapper.emitted('open-lesson')).toEqual([['lesson-1']])
     await wrapper.get('.back-button').trigger('click')

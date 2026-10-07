@@ -165,3 +165,63 @@ export function resolveResumeTarget(library, position) {
     itemId: itemExists ? position.itemId : null,
   }
 }
+
+// Bestimmt das Weiterlernen-Ziel aus dem ECHTEN Fortschritt (itemStatuses =
+// { itemId: entry } fuer genau diesen Bereich, siehe getAreaItemStatuses).
+//
+// "Offen" heisst: fuer die itemId existiert noch kein Eintrag, die Aufgabe
+// wurde also nie beantwortet. Falsch beantwortete Aufgaben ('incorrect') gelten
+// als bearbeitet - sie werden ueber "Fehler wiederholen" geuebt, nicht ueber
+// Weiterlernen (sonst liefe Weiterlernen nach einer falschen Antwort zurueck
+// zu genau dieser Aufgabe).
+//
+// Reihenfolge strikt aus der Library (lessons -> scenarios -> items):
+//   1. Startpunkt = aufgeloeste lastPosition (nur Kontext; faellt wie
+//      resolveResumeTarget stufenweise auf Szenario-/Lektionsanfang zurueck,
+//      bei ungueltiger/fehlender Position auf den Bereichsanfang).
+//   2. Erste offene Aufgabe ab dem Startpunkt vorwaerts.
+//   3. Wrap-around: erste offene Aufgabe vor dem Startpunkt (uebersprungene
+//      Luecken gehen nicht verloren).
+// Liefert null, wenn nichts offen ist (Bereich fertig), wenn der Bereich noch
+// nie begonnen wurde (weder gueltige Position noch Fortschritt) oder wenn keine
+// Library vorliegt.
+export function resolveNextOpenTarget(library, itemStatuses, position) {
+  if (!library || !Array.isArray(library.lessons)) return null
+
+  const entries = []
+  for (const lesson of library.lessons) {
+    for (const scenario of lesson.scenarios ?? []) {
+      for (const item of scenario.items ?? []) {
+        entries.push({ lesson, scenario, item })
+      }
+    }
+  }
+
+  const statuses = itemStatuses ?? {}
+  const isOpen = (entry) => !statuses[entry.item.id]
+
+  const anchor = resolveResumeTarget(library, position)
+  const hasProgress = entries.some((entry) => !isOpen(entry))
+  if (!anchor && !hasProgress) return null
+
+  let startIndex = 0
+  if (anchor) {
+    const anchorIndex = entries.findIndex((entry) =>
+      entry.lesson.lessonId === anchor.lessonId &&
+      (!anchor.scenarioId || entry.scenario.scenarioId === anchor.scenarioId) &&
+      (!anchor.itemId || entry.item.id === anchor.itemId),
+    )
+    if (anchorIndex > 0) startIndex = anchorIndex
+  }
+
+  const found = entries.slice(startIndex).find(isOpen) ?? entries.slice(0, startIndex).find(isOpen)
+  if (!found) return null
+
+  return {
+    lessonId: found.lesson.lessonId,
+    lessonTitle: found.lesson.lessonTitle,
+    scenarioId: found.scenario.scenarioId,
+    scenarioTitle: found.scenario.scenarioTitle,
+    itemId: found.item.id,
+  }
+}

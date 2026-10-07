@@ -6,7 +6,7 @@ import ChoiceCard from './components/ChoiceCard.vue'
 import OrderedStepsTrainer from './components/OrderedStepsTrainer.vue'
 import GapInputTrainer from './components/GapInputTrainer.vue'
 import LearningNavigator from './components/LearningNavigator.vue'
-import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveResumeTarget } from './utils/progressStorage.js'
+import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
 
@@ -46,14 +46,19 @@ const progressTick = ref(0)
 
 // Neu berechnet, sobald sich die geladenen Libraries aendern oder eine neue
 // Antwort gespeichert wird (progressTick). Nur Bereiche mit geladener,
-// konfliktfreier Library und einer gegen die aktuelle Library gueltigen
-// lastPosition tauchen hier auf - siehe resolveResumeTarget.
+// konfliktfreier Library und mindestens einer noch offenen Aufgabe tauchen
+// hier auf - siehe resolveNextOpenTarget. Der echte Fortschritt (itemStatus)
+// bestimmt das Ziel, lastPosition dient nur als Startpunkt.
+function resolveAreaResume(areaId, library) {
+  return resolveNextOpenTarget(library, getAreaItemStatuses(areaId), getLastPosition(areaId))
+}
+
 const resumeByAreaId = computed(() => {
   progressTick.value
   const result = {}
   for (const [areaId, entry] of Object.entries(libraryRegistry.value.libraryByAreaId)) {
     if (libraryRegistry.value.conflictsByAreaId[areaId]) continue
-    const target = resolveResumeTarget(entry.library, getLastPosition(areaId))
+    const target = resolveAreaResume(areaId, entry.library)
     if (target) result[areaId] = target
   }
   return result
@@ -109,15 +114,14 @@ function openArea(areaId) {
   view.value = 'lessons'
 }
 
-// Springt direkt zur gespeicherten Position eines Bereichs. Faellt bei
-// teilweise ungueltigen IDs stufenweise zurueck (siehe resolveResumeTarget)
-// und faellt bei komplett fehlendem/ungueltigem Fortschritt auf den
-// normalen Bereichseinstieg zurueck - kein Crash, keine Sonderbehandlung.
+// Springt direkt zur naechsten noch offenen Aufgabe eines Bereichs (siehe
+// resolveNextOpenTarget). Gibt es kein Ziel (nichts begonnen, alles erledigt),
+// faellt es auf den normalen Bereichseinstieg zurueck - kein Crash.
 function resumeArea(areaId) {
   const entry = libraryRegistry.value.libraryByAreaId[areaId]
   if (!entry || libraryRegistry.value.conflictsByAreaId[areaId]) return
 
-  const target = resolveResumeTarget(entry.library, getLastPosition(areaId))
+  const target = resolveAreaResume(areaId, entry.library)
   if (!target) {
     openArea(areaId)
     return
@@ -127,20 +131,16 @@ function resumeArea(areaId) {
   selectedLessonId.value = target.lessonId
   itemStatuses.value = getAreaItemStatuses(areaId)
 
-  if (!target.scenarioId) {
-    view.value = 'scenarios'
-    return
-  }
-
   const lesson = entry.library.lessons.find((candidate) => candidate.lessonId === target.lessonId)
   const scenario = lesson.scenarios.find((candidate) => candidate.scenarioId === target.scenarioId)
   activeAreaId.value = areaId
   allItems.value = scenario.items
-  startRun(scenario.items)
-  if (target.itemId) {
-    const startIndex = scenario.items.findIndex((item) => item.id === target.itemId)
-    if (startIndex > 0) currentIndex.value = startIndex
-  }
+  // Resume-Run: ab dem Ziel nur noch Aufgaben ohne Progress-Eintrag (richtig
+  // oder falsch zaehlt als bearbeitet), das Ziel selbst bleibt enthalten.
+  // Der normale Szenario-Start (startScenario) bleibt linear.
+  const statuses = itemStatuses.value
+  const startIndex = Math.max(0, scenario.items.findIndex((item) => item.id === target.itemId))
+  startRun(scenario.items.filter((item, index) => index >= startIndex && (item.id === target.itemId || !statuses[item.id])))
 }
 
 function openLesson(lessonId) {

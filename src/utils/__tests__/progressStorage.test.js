@@ -6,6 +6,7 @@ import {
   getItemStatus,
   getLastPosition,
   recordItemResult,
+  resolveNextOpenTarget,
   resolveResumeTarget,
   saveLastPosition,
 } from '../progressStorage.js'
@@ -217,5 +218,140 @@ describe('Private-Content-Safety', () => {
     window.localStorage.setItem(PROGRESS_STORAGE_KEY, '{"not":"expected"}')
     expect(getItemStatus('telephoning', 'tel-open-01')).toBeNull()
     expect(() => recordItemResult('telephoning', 'tel-open-01', true)).not.toThrow()
+  })
+})
+
+describe('resolveNextOpenTarget - Weiterlernen aus echtem Fortschritt', () => {
+  const library = {
+    lessons: [
+      {
+        lessonId: 'l1', lessonTitle: 'Lesson 1',
+        scenarios: [
+          { scenarioId: 's1', scenarioTitle: 'Scenario 1', items: [{ id: 'i1' }, { id: 'i2' }, { id: 'i3' }] },
+          { scenarioId: 's2', scenarioTitle: 'Scenario 2', items: [{ id: 'i4' }, { id: 'i5' }] },
+        ],
+      },
+      {
+        lessonId: 'l2', lessonTitle: 'Lesson 2',
+        scenarios: [{ scenarioId: 's3', scenarioTitle: 'Scenario 3', items: [{ id: 'i6' }] }],
+      },
+    ],
+  }
+
+  // Geht bewusst ueber den echten Storage-Pfad (Speichern -> Lesen), nicht ueber handgebauten Input.
+  function answer(areaId, ids, correct = true) {
+    ids.forEach((id) => recordItemResult(areaId, id, correct))
+  }
+  function resolve(areaId = 'telephoning') {
+    return resolveNextOpenTarget(library, getAreaItemStatuses(areaId), getLastPosition(areaId))
+  }
+  function savePosition(itemId, scenarioId = 's1', lessonId = 'l1') {
+    saveLastPosition('telephoning', { lessonId, scenarioId, itemId })
+  }
+
+  it('A: Item 1 erledigt, Item 2 offen -> Item 2', () => {
+    answer('telephoning', ['i1'])
+    savePosition('i1')
+    expect(resolve()).toMatchObject({ lessonId: 'l1', scenarioId: 's1', itemId: 'i2' })
+  })
+
+  it('B: Item 1 erledigt ohne "Weiter"-Klick (lastPosition = Item 1) -> trotzdem Item 2, nicht Item 1', () => {
+    answer('telephoning', ['i1'])
+    savePosition('i1')
+    const target = resolve()
+    expect(target.itemId).not.toBe('i1')
+    expect(target.itemId).toBe('i2')
+  })
+
+  it('B2: ohne lastPosition, nur mit Fortschritt -> erste offene Aufgabe des Bereichs', () => {
+    answer('telephoning', ['i1', 'i2'])
+    expect(resolve()).toMatchObject({ itemId: 'i3' })
+  })
+
+  it('C: Szenario komplett erledigt -> erste offene Aufgabe des nächsten Szenarios', () => {
+    answer('telephoning', ['i1', 'i2', 'i3'])
+    savePosition('i3')
+    expect(resolve()).toEqual({ lessonId: 'l1', lessonTitle: 'Lesson 1', scenarioId: 's2', scenarioTitle: 'Scenario 2', itemId: 'i4' })
+  })
+
+  it('D: Lektion komplett erledigt -> erste offene Aufgabe der nächsten Lektion', () => {
+    answer('telephoning', ['i1', 'i2', 'i3', 'i4', 'i5'])
+    savePosition('i5', 's2')
+    expect(resolve()).toEqual({ lessonId: 'l2', lessonTitle: 'Lesson 2', scenarioId: 's3', scenarioTitle: 'Scenario 3', itemId: 'i6' })
+  })
+
+  it('E: Bereich vollständig erledigt -> kein Ziel', () => {
+    answer('telephoning', ['i1', 'i2', 'i3', 'i4', 'i5', 'i6'])
+    savePosition('i6', 's3', 'l2')
+    expect(resolve()).toBeNull()
+  })
+
+  it('F: frühere Lücke, alles nach der lastPosition erledigt -> Lücke wird per Wrap-around gefunden', () => {
+    answer('telephoning', ['i1', 'i3', 'i4', 'i5', 'i6'])
+    savePosition('i6', 's3', 'l2')
+    expect(resolve()).toMatchObject({ lessonId: 'l1', scenarioId: 's1', itemId: 'i2' })
+  })
+
+  it('F2: offene Aufgabe hinter der lastPosition hat Vorrang vor einer älteren Lücke', () => {
+    answer('telephoning', ['i1', 'i3'])
+    savePosition('i3')
+    expect(resolve()).toMatchObject({ itemId: 'i4' })
+  })
+
+  it('behandelt falsch beantwortete Aufgaben als bearbeitet, nicht als nie gesehen', () => {
+    answer('telephoning', ['i1'], false)
+    savePosition('i1')
+    expect(resolve()).toMatchObject({ itemId: 'i2' })
+  })
+
+  it('bietet bei einem nie begonnenen Bereich (keine Position, kein Fortschritt) kein Ziel an', () => {
+    expect(resolve()).toBeNull()
+  })
+
+  it('G: ohne Library -> kein Ziel', () => {
+    answer('telephoning', ['i1'])
+    expect(resolveNextOpenTarget(null, getAreaItemStatuses('telephoning'), getLastPosition('telephoning'))).toBeNull()
+    expect(resolveNextOpenTarget(undefined, {}, null)).toBeNull()
+  })
+
+  it('I: Fortschritt eines anderen Bereichs beeinflusst das Ziel nicht', () => {
+    answer('email-writing', ['i1', 'i2', 'i3', 'i4', 'i5', 'i6'])
+    saveLastPosition('email-writing', { lessonId: 'l2', scenarioId: 's3', itemId: 'i6' })
+    expect(resolve('telephoning')).toBeNull()
+    answer('telephoning', ['i1'])
+    expect(resolve('telephoning')).toMatchObject({ itemId: 'i2' })
+    expect(resolve('email-writing')).toBeNull()
+  })
+
+  it('J: partielle lastPosition-Fallbacks liefern weiterhin ein sinnvolles Ziel', () => {
+    answer('telephoning', ['i1'])
+    // entfernte itemId -> Szenario-Anfang als Startpunkt, i1 erledigt -> i2
+    savePosition('removed-item')
+    expect(resolve()).toMatchObject({ scenarioId: 's1', itemId: 'i2' })
+    // entferntes Szenario -> Lektionsanfang
+    savePosition('i1', 'removed-scenario')
+    expect(resolve()).toMatchObject({ lessonId: 'l1', itemId: 'i2' })
+    // entfernte Lektion -> Bereichsanfang, Fortschritt vorhanden
+    savePosition('i1', 's1', 'removed-lesson')
+    expect(resolve()).toMatchObject({ itemId: 'i2' })
+  })
+
+  it('J2: Position ohne itemId (nur Szenario) startet am Szenario-Anfang', () => {
+    saveLastPosition('telephoning', { lessonId: 'l1', scenarioId: 's2' })
+    expect(resolve()).toMatchObject({ scenarioId: 's2', itemId: 'i4' })
+  })
+
+  it('J3: Position nur mit lessonId startet am Lektions-Anfang', () => {
+    saveLastPosition('telephoning', { lessonId: 'l2' })
+    expect(resolve()).toMatchObject({ lessonId: 'l2', itemId: 'i6' })
+  })
+
+  it('folgt der Library-Reihenfolge, nicht der ID-Sortierung', () => {
+    const reordered = { lessons: [{ lessonId: 'l1', lessonTitle: 'L', scenarios: [{ scenarioId: 's1', scenarioTitle: 'S', items: [{ id: 'zzz' }, { id: 'aaa' }] }] }] }
+    answer('telephoning', ['zzz'])
+    expect(resolveNextOpenTarget(reordered, getAreaItemStatuses('telephoning'), null)).toMatchObject({ itemId: 'aaa' })
+    window.localStorage.clear()
+    saveLastPosition('telephoning', { lessonId: 'l1', scenarioId: 's1' })
+    expect(resolveNextOpenTarget(reordered, {}, getLastPosition('telephoning'))).toMatchObject({ itemId: 'zzz' })
   })
 })
