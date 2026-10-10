@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import AnswerOption from './AnswerOption.vue'
+import AudioButton from './AudioButton.vue'
+import { useItemAudio } from '../utils/useItemAudio.js'
 
 const props = defineProps({
   item: {
@@ -58,6 +60,8 @@ const intentLabel = computed(() => {
     .join(' ')
 })
 
+const { canPlayQuestion, canPlaySolution, playQuestion, playSolution } = useItemAudio(() => props.item, () => props.isAnswered)
+
 const isMemoryHintOpen = ref(false)
 
 watch(
@@ -79,7 +83,10 @@ function toggleMemoryHint() {
       <span v-if="intentLabel">{{ intentLabel }}</span>
     </div>
 
-    <h2>{{ item.prompt }}</h2>
+    <div class="prompt-row">
+      <h2>{{ item.prompt }}</h2>
+      <AudioButton v-if="canPlayQuestion" label="Frage anhören" @play="playQuestion" />
+    </div>
 
     <div class="answers">
       <AnswerOption
@@ -93,6 +100,8 @@ function toggleMemoryHint() {
     </div>
 
     <div v-if="isAnswered" class="feedback-box">
+      <AudioButton v-if="canPlaySolution" label="Richtige Antwort anhören" show-label @play="playSolution" />
+
       <p v-if="isCorrect" class="feedback-correct">
         <span aria-hidden="true">✓</span> Richtig.
       </p>

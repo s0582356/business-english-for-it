@@ -734,3 +734,116 @@ button.navigator-list-card:hover { border-color: var(--color-accent); }
 .quiz-layout { position: relative; padding-top: 38px; }
 .quiz-back-button { position: absolute; top: -4px; left: 0; }
 @media (max-width: 720px) { .navigator-list-card { align-items: flex-start; } }
+
+/* ---------- Audio (Zusatzfunktion) ---------- */
+.prompt-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.prompt-row h2 {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.audio-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.75rem;
+  justify-content: center;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 999px;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.audio-button:hover {
+  border-color: var(--color-primary);
+}
+
+.audio-button:focus-visible,
+.audio-toggle:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.audio-button-labelled {
+  align-self: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.audio-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.audio-toggle {
+  min-height: 2.5rem;
+  padding: 0.25rem 0.9rem;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.audio-toggle[aria-pressed='true'] {
+  border-color: var(--color-primary);
+  background: var(--color-surface-alt);
+}
+
+.audio-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.audio-hint {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-size: 0.9rem;
+}
+
+.audio-rate {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.audio-rate-label strong {
+  color: var(--color-text);
+}
+
+.audio-rate-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.audio-rate-slider {
+  flex: 1 1 auto;
+  min-height: 2.75rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.audio-rate-slider:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}

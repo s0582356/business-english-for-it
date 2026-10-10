@@ -1,5 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import AudioButton from './AudioButton.vue'
+import { useItemAudio } from '../utils/useItemAudio.js'
 
 // Fachneutrale Ordered-Steps-Komponente: nimmt beliebige Schritte + Ziel-
 // reihenfolge entgegen. Kein Telephoning-spezifischer Code, damit die
@@ -49,6 +51,7 @@ function shuffledStartOrder(item) {
 
 const order = ref(shuffledStartOrder(props.item))
 const checked = ref(false)
+const { canPlayQuestion, canPlaySolution, playQuestion, playSolution } = useItemAudio(() => props.item, () => checked.value)
 
 watch(
   () => props.item,
@@ -119,7 +122,10 @@ function nextItem() {
     </div>
 
     <p class="training-instruction">Bringe die Aussagen mit ▲/▼ in die richtige Reihenfolge.</p>
-    <h2>{{ item.prompt }}</h2>
+    <div class="prompt-row">
+      <h2>{{ item.prompt }}</h2>
+      <AudioButton v-if="canPlayQuestion" label="Frage anhören" @play="playQuestion" />
+    </div>
 
     <ol class="process-steps">
       <li v-for="(id, index) in order" :key="id" class="process-step" :class="stepClass(id, index)">
@@ -149,6 +155,7 @@ function nextItem() {
     <button v-if="!checked" class="primary-button" type="button" @click="check">Reihenfolge prüfen</button>
 
     <div v-if="checked" class="feedback-box">
+      <AudioButton v-if="canPlaySolution" label="Richtige Reihenfolge anhören" show-label @play="playSolution" />
       <p v-if="isCorrect" class="feedback-correct"><span aria-hidden="true">✓</span> Richtig.</p>
       <template v-else>
         <p class="feedback-wrong">

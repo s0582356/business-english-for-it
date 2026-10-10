@@ -1,12 +1,15 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { isAcceptedGapAnswer } from '../utils/gapAnswer.js'
+import AudioButton from './AudioButton.vue'
+import { useItemAudio } from '../utils/useItemAudio.js'
 
 const props = defineProps({ item: { type: Object, required: true }, isLastItem: { type: Boolean, required: true } })
 const emit = defineEmits(['completed', 'next-item', 'finish'])
 const answer = ref('')
 const checked = ref(false)
 const isMemoryHintOpen = ref(false)
+const { canPlayQuestion, canPlaySolution, playQuestion, playSolution } = useItemAudio(() => props.item, () => checked.value)
 
 watch(() => props.item, () => {
   answer.value = ''
@@ -31,11 +34,12 @@ function nextItem() {
 <template>
   <section class="question-card gap-input-trainer">
     <div class="question-meta"><span v-if="item.category">{{ item.category }}</span><span v-if="intentLabel">{{ intentLabel }}</span></div>
-    <h2>{{ item.prompt }}</h2>
+    <div class="prompt-row"><h2>{{ item.prompt }}</h2><AudioButton v-if="canPlayQuestion" label="Frage anhören" @play="playQuestion" /></div>
     <label class="visually-hidden" :for="`gap-answer-${item.id}`">Deine Antwort</label>
     <input :id="`gap-answer-${item.id}`" v-model="answer" class="gap-answer-input" type="text" autocomplete="off" :disabled="checked" placeholder="Deine Antwort" @keyup.enter="check">
     <button v-if="!checked" class="primary-button" type="button" @click="check">Antwort prüfen</button>
     <div v-if="checked" class="feedback-box">
+      <AudioButton v-if="canPlaySolution" label="Richtigen Satz anhören" show-label @play="playSolution" />
       <p v-if="isCorrect" class="feedback-correct"><span aria-hidden="true">✓</span> Richtig.</p>
       <p v-else class="feedback-wrong"><span aria-hidden="true">✗</span> Nicht ganz.</p>
       <p v-if="!isCorrect" class="gap-model-answer">Mögliche Lösung: <strong>{{ item.acceptedAnswers[0] }}</strong></p>

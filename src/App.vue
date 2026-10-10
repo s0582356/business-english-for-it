@@ -1,11 +1,13 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import PrivateContentImporter from './components/PrivateContentImporter.vue'
 import ScoreBox from './components/ScoreBox.vue'
 import ChoiceCard from './components/ChoiceCard.vue'
 import OrderedStepsTrainer from './components/OrderedStepsTrainer.vue'
 import GapInputTrainer from './components/GapInputTrainer.vue'
 import LearningNavigator from './components/LearningNavigator.vue'
+import { AUDIO_CONTROLLER_KEY, createAudioController } from './utils/audioController.js'
+import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN, PLAYBACK_RATE_STEP, formatPlaybackRate } from './utils/audioSettings.js'
 import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
@@ -31,6 +33,47 @@ function toggleTheme() {
   applyTheme(theme.value)
   window.localStorage.setItem(THEME_STORAGE_KEY, theme.value)
 }
+
+// Audio ist reine Zusatzfunktion: Controller wird bereitgestellt, die Renderer
+// nutzen ihn per inject (ohne Audio-Pack bleiben sie komplett unveraendert).
+const audio = createAudioController()
+provide(AUDIO_CONTROLLER_KEY, audio)
+// Audio-Importstatus - immer identisch mit dem tatsaechlich aktiven Pack:
+// audioLoaded = aktive(r) Pack(s), audioErrors = Fehler des letzten Imports (+ Hinweis, was weiter gilt).
+const audioLoaded = ref([])
+const audioErrors = ref([])
+const audioErrorNote = ref('')
+
+function onAudioPackLoaded({ pack, report }) {
+  if (pack) {
+    audio.setPack(pack)
+    audioLoaded.value = report.loaded
+    audioErrorNote.value = 'Dieses ZIP wird nicht verwendet.'
+  } else {
+    // Kein gueltiger neuer Pack: ein bisher gueltiger Pack bleibt aktiv (und wird weiter angezeigt).
+    audioErrorNote.value = audio.hasPack.value
+      ? 'Der bisher geladene Audio-Pack bleibt aktiv.'
+      : 'Die Lernbibliotheken funktionieren trotzdem, nur ohne Audio.'
+  }
+  audioErrors.value = report.errors
+}
+
+// iOS/Safari erlaubt programmatisches Abspielen erst, nachdem das (eine,
+// wiederverwendete) Audio-Element per Nutzergeste entsperrt wurde.
+function unlockAudio() {
+  audio.unlock()
+}
+
+onMounted(() => {
+  document.addEventListener('click', unlockAudio, true)
+  document.addEventListener('touchend', unlockAudio, true)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', unlockAudio, true)
+  document.removeEventListener('touchend', unlockAudio, true)
+  audio.dispose()
+})
 
 const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result'
 
@@ -73,6 +116,7 @@ const score = ref(0)
 const answeredLog = ref([]) // [{ id, correct }]
 
 const currentItem = computed(() => runItems.value[currentIndex.value])
+const upcomingItem = computed(() => (view.value === 'run' ? runItems.value[currentIndex.value + 1] ?? null : null))
 const totalRunItems = computed(() => runItems.value.length)
 const isLastItem = computed(() => currentIndex.value === totalRunItems.value - 1)
 const wrongCount = computed(() => totalRunItems.value - score.value)
@@ -86,6 +130,13 @@ const resultMessage = computed(() => {
   if (scorePercentage.value >= 75) return 'Solide Basis – ein paar Formulierungen noch festigen.'
   if (scorePercentage.value >= 60) return 'Guter Start – wiederhole die offenen Punkte.'
   return 'Noch unsicher – lohnt sich, die Fehler zu wiederholen.'
+})
+
+// Navigation/Ansichtswechsel beendet laufendes Audio. Die naechste Frage wird
+// leicht vorgeladen (nur Vorbereitung, kein Abspielen).
+watch(view, () => audio.stop())
+watch(upcomingItem, (item) => {
+  if (item) audio.prefetchQuestion(item)
 })
 
 function startRun(items, { reviewMode = false } = {}) {
@@ -238,6 +289,44 @@ function backToHome() {
       <p class="eyebrow">Business English</p>
       <h1>Deine persönliche Business-English-Lernplattform</h1>
       <p class="intro">Vokabular, Socialising, Telefonate und E-Mails für Studium, Praktikum und IT-Beruf.</p>
+
+      <div v-if="audio.hasPack.value" class="audio-settings" role="group" aria-label="Audio-Einstellungen">
+        <button
+          type="button"
+          class="audio-toggle"
+          :aria-pressed="audio.audioEnabled.value"
+          @click="audio.setAudioEnabled(!audio.audioEnabled.value)"
+        >
+          <span aria-hidden="true">🔊</span> Audio: {{ audio.audioEnabled.value ? 'An' : 'Aus' }}
+        </button>
+        <button
+          type="button"
+          class="audio-toggle"
+          :aria-pressed="audio.autoPlay.value"
+          :disabled="!audio.audioEnabled.value"
+          @click="audio.setAutoPlay(!audio.autoPlay.value)"
+        >
+          Auto-Vorlesen: {{ audio.autoPlay.value ? 'An' : 'Aus' }}
+        </button>
+        <div class="audio-rate">
+          <label class="audio-rate-label" for="audio-playback-rate">Sprechtempo: <strong>{{ formatPlaybackRate(audio.playbackRate.value) }}</strong></label>
+          <div class="audio-rate-control">
+            <span aria-hidden="true">{{ formatPlaybackRate(PLAYBACK_RATE_MIN) }}</span>
+            <input
+              id="audio-playback-rate"
+              class="audio-rate-slider"
+              type="range"
+              :min="PLAYBACK_RATE_MIN"
+              :max="PLAYBACK_RATE_MAX"
+              :step="PLAYBACK_RATE_STEP"
+              :value="audio.playbackRate.value"
+              :aria-valuetext="formatPlaybackRate(audio.playbackRate.value)"
+              @input="audio.setPlaybackRate($event.target.value)"
+            />
+            <span aria-hidden="true">{{ formatPlaybackRate(PLAYBACK_RATE_MAX) }}</span>
+          </div>
+        </div>
+      </div>
     </header>
 
     <section v-if="view === 'home'" class="home-view">
@@ -250,7 +339,16 @@ function backToHome() {
         @resume-area="resumeArea"
         @request-import="importer?.openFilePicker()"
       />
-      <PrivateContentImporter ref="importer" :current-registry="libraryRegistry" @libraries-loaded="onLibrariesLoaded" />
+      <PrivateContentImporter
+        ref="importer"
+        :current-registry="libraryRegistry"
+        @libraries-loaded="onLibrariesLoaded"
+        @audio-pack-loaded="onAudioPackLoaded"
+      />
+      <section v-if="audioLoaded.length || audioErrors.length" class="import-report" aria-label="Audio-Pack-Bericht">
+        <p v-for="entry in audioLoaded" :key="'audio-' + entry.fileName" class="explanation">Audio-Pack geladen: {{ entry.fileName }} ({{ entry.fileCount }} Audio-Dateien)</p>
+        <p v-for="entry in audioErrors" :key="'audio-error-' + entry.fileName" class="feedback-wrong">Audio-Pack {{ entry.fileName }}: {{ entry.reason }} {{ audioErrorNote }}</p>
+      </section>
       <section v-if="importReport" class="import-report" aria-label="Importbericht">
         <p v-for="entry in importReport.loaded" :key="'loaded-' + entry.fileName" class="explanation">Geladen: {{ entry.areaId }} ({{ entry.fileName }})</p>
         <p v-for="entry in importReport.upgrades" :key="'upgrade-' + entry.fileName" class="explanation">Aktualisiert auf Version {{ entry.libraryVersion }}: {{ entry.areaId }}</p>
@@ -277,6 +375,9 @@ function backToHome() {
     <section v-else-if="view === 'run' && currentItem" class="quiz-layout">
       <button type="button" class="back-button quiz-back-button" @click="backToHome">← Zur Szenarioübersicht</button>
       <ScoreBox :current-item-index="currentIndex" :total-items="totalRunItems" :score="score" />
+      <p v-if="audio.autoplayBlocked.value" class="audio-hint" role="status">
+        Automatisches Vorlesen wurde vom Browser blockiert – tippe auf 🔊, um die Frage zu hören.
+      </p>
 
       <ChoiceCard
         v-if="currentItem.type === 'choice'"
