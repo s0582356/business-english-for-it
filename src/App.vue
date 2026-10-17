@@ -80,6 +80,7 @@ const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result'
 const libraryRegistry = ref({ libraryByAreaId: {}, conflictsByAreaId: {} })
 const importReport = ref(null)
 const importer = ref(null)
+const selectedGroupId = ref(null) // geoeffnete Hauptkachel (z. B. 'w3'); bleibt beim Wechsel in Lektionen erhalten
 const selectedAreaId = ref(null)
 const selectedLessonId = ref(null)
 const activeAreaId = ref(null)
@@ -155,6 +156,14 @@ function onLibrariesLoaded(result) {
   importReport.value = result.report
   itemStatuses.value = selectedAreaId.value ? getAreaItemStatuses(selectedAreaId.value) : {}
   view.value = 'home'
+}
+
+function openGroup(groupId) {
+  selectedGroupId.value = groupId
+}
+
+function backToGroups() {
+  selectedGroupId.value = null
 }
 
 function openArea(areaId) {
@@ -335,8 +344,11 @@ function backToHome() {
         :conflicts-by-area-id="libraryRegistry.conflictsByAreaId"
         :item-statuses="itemStatuses"
         :resume-by-area-id="resumeByAreaId"
+        :selected-group-id="selectedGroupId"
         @open-area="openArea"
         @resume-area="resumeArea"
+        @open-group="openGroup"
+        @back-to-groups="backToGroups"
         @request-import="importer?.openFilePicker()"
       />
       <PrivateContentImporter
