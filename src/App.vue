@@ -127,8 +127,8 @@ const scorePercentage = computed(() =>
 const incorrectItemIds = computed(() => [...new Set(answeredLog.value.filter((entry) => !entry.correct).map((entry) => entry.id))])
 
 const resultMessage = computed(() => {
-  if (scorePercentage.value >= 90) return 'Sehr sicher unterwegs am Telefon.'
-  if (scorePercentage.value >= 75) return 'Solide Basis – ein paar Formulierungen noch festigen.'
+  if (scorePercentage.value >= 90) return 'Sehr gut gemacht! Du hast die Aufgaben sicher gelöst.'
+  if (scorePercentage.value >= 75) return 'Solide Basis – ein paar Punkte noch festigen.'
   if (scorePercentage.value >= 60) return 'Guter Start – wiederhole die offenen Punkte.'
   return 'Noch unsicher – lohnt sich, die Fehler zu wiederholen.'
 })

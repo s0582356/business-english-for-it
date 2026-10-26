@@ -746,6 +746,10 @@ button.navigator-list-card:hover { border-color: var(--color-accent); }
 .prompt-row h2 {
   margin: 0;
   flex: 1 1 auto;
+  min-width: 0;
+  /* Explizite Zeilenumbrüche im Prompt anzeigen (z. B. getrennte Datenzeilen). */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .audio-button {
