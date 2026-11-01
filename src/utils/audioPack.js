@@ -67,6 +67,7 @@ export function combineAudioPacks(packs) {
   }
   if (packs.length === 1) return packs[0]
   return {
+    parts: packs.flatMap((pack) => pack.parts ?? [pack]),
     fileName: packs.map((pack) => pack.fileName).join(', '),
     fileCount: packs.reduce((sum, pack) => sum + pack.fileCount, 0),
     has: (name) => packs.some((pack) => pack.has(name)),

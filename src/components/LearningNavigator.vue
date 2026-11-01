@@ -9,9 +9,11 @@ const props = defineProps({
   selectedGroupId: { type: String, default: null },
   selectedAreaId: { type: String, default: null },
   selectedLessonId: { type: String, default: null },
+  coachEntry: { type: Object, default: null },
+  coachConflict: { type: Object, default: null },
 })
 
-const emit = defineEmits(['open-area', 'resume-area', 'open-group', 'back-to-groups', 'open-lesson', 'start-scenario', 'back-to-areas', 'back-to-lessons', 'request-import'])
+const emit = defineEmits(['open-area', 'resume-area', 'open-group', 'back-to-groups', 'open-lesson', 'start-scenario', 'back-to-areas', 'back-to-lessons', 'request-import', 'open-coach'])
 
 const knownAreas = [
   { id: 'telephoning', icon: '📞', title: 'Business Telephoning' },
@@ -43,6 +45,14 @@ function buildAreaCard(area) {
   const resume = !conflict && library ? (props.resumeByAreaId[area.id] ?? null) : null
   return { ...area, kind: 'area', library, conflict, scenarioCount, resume, status: conflict ? 'conflict' : library ? 'loaded' : 'missing' }
 }
+
+// Eigenstaendige Lerncoach-Kachel innerhalb der W3-Gruppe. Sie ist bewusst KEIN Bereich
+// (areaGroups), damit die "x von 3 Bereichen geladen"-Zaehler unveraendert bleiben.
+const COACH_GROUP_ID = 'w3'
+const coachCard = computed(() => ({
+  status: props.coachConflict ? 'conflict' : props.coachEntry ? 'loaded' : 'missing',
+  unitCount: props.coachEntry?.library.units.length ?? 0,
+}))
 
 const groupCards = computed(() => areaGroups.map((group) => {
   const areas = group.areas.map(buildAreaCard)
@@ -119,6 +129,24 @@ function lessonItemCount(lesson) { return lesson.scenarios.reduce((count, scenar
           <template v-else><p class="navigator-status">Noch nicht geladen</p><p class="navigator-meta">Für diesen Bereich ist noch keine Lernbibliothek geladen.</p><button type="button" class="secondary-button" @click="emit('request-import')">Lernbibliotheken laden</button></template>
         </article>
       </template>
+      <article v-if="selectedGroup && selectedGroup.id === COACH_GROUP_ID" class="navigator-card navigator-card-coach" aria-label="Mein Lerncoach">
+        <span class="area-card-icon" aria-hidden="true">🧭</span><h3>Mein Lerncoach – Englisch Schritt für Schritt</h3>
+        <template v-if="coachCard.status === 'loaded'">
+          <p class="coach-card-status coach-card-status-loaded">Lerncoach geladen</p>
+          <p class="navigator-meta">{{ coachCard.unitCount }} {{ coachCard.unitCount === 1 ? 'Lerneinheit' : 'Lerneinheiten' }} · verstehen, hören, üben, eigenen Satz bilden</p>
+          <button type="button" class="primary-button" @click="emit('open-coach')">Lerncoach öffnen</button>
+        </template>
+        <template v-else-if="coachCard.status === 'conflict'">
+          <p class="coach-card-status coach-card-status-conflict">⚠ Konflikt bei der Lerncoach-Bibliothek</p>
+          <p class="navigator-meta">Mehrere unterschiedliche Lerncoach-Bibliotheken wurden erkannt.</p>
+          <button type="button" class="secondary-button" @click="emit('request-import')">Lernbibliotheken laden</button>
+        </template>
+        <template v-else>
+          <p class="coach-card-status">Noch nicht geladen</p>
+          <p class="navigator-meta">Für den Lerncoach ist noch keine Bibliothek geladen.</p>
+          <button type="button" class="secondary-button" @click="emit('request-import')">Lernbibliotheken laden</button>
+        </template>
+      </article>
     </div>
   </section>
 

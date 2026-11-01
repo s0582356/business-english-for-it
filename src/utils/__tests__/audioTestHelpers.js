@@ -82,6 +82,7 @@ export function createFakePack(files = {}, { fileName = 'business-english-audio-
     fileCount: map.size,
     reads,
     has: (name) => map.has(name),
+    names: () => [...map.keys()],
     getBlob: async (name) => {
       reads.push(name)
       const value = map.get(name)

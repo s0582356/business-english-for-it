@@ -103,6 +103,17 @@ export function describeSpokenTexts(item) {
     return { question: speakablePrompt(item.prompt), solution, flags: solution === null ? ['ordered-structure-no-solution'] : [] }
   }
 
+  // Lerncoach: ein englischer Beispielsatz wird als "Frage"-Audio gesprochen (nie die deutsche
+  // Uebersetzung); bei der eigenen Satzbildung nur die ERSTE Musterloesung, nie eine Nutzerantwort.
+  if (item.type === 'example') {
+    return { question: isNonEmptyString(item.en) ? tidy(item.en) : null, solution: null, flags: [] }
+  }
+
+  if (item.type === 'produce') {
+    const model = Array.isArray(item.modelAnswers) ? item.modelAnswers[0] : null
+    return { question: null, solution: isNonEmptyString(model) ? tidy(model) : null, flags: [] }
+  }
+
   return { question: null, solution: null, flags: [] }
 }
 

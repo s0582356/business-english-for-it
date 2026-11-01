@@ -2,15 +2,20 @@
 import { ref } from 'vue'
 import { importLibraryFiles } from '../utils/libraryImport.js'
 import { loadAudioPacks, splitImportFiles } from '../utils/audioPack.js'
+import { EMPTY_COACH_REGISTRY, importCoachFiles, partitionCoachFiles } from '../utils/coachImport.js'
 
 const props = defineProps({
   currentRegistry: {
     type: Object,
     default: () => ({ libraryByAreaId: {}, conflictsByAreaId: {} }),
   },
+  currentCoach: {
+    type: Object,
+    default: () => EMPTY_COACH_REGISTRY,
+  },
 })
 
-const emit = defineEmits(['libraries-loaded', 'audio-pack-loaded'])
+const emit = defineEmits(['libraries-loaded', 'audio-pack-loaded', 'coach-loaded'])
 const fileInput = ref(null)
 
 async function handleFileChange(event) {
@@ -20,11 +25,17 @@ async function handleFileChange(event) {
   // .zip -> gemeinsames Audio-Pack, alles andere wie bisher -> Lernbibliotheken.
   // Die Libraries werden zuerst und unabhaengig vom Audio-Pack importiert:
   // ein defektes ZIP darf den Library-Import nie beeintraechtigen.
-  const { libraryFiles, audioFiles } = splitImportFiles(files)
+  const { libraryFiles: jsonFiles, audioFiles } = splitImportFiles(files)
+  // Lerncoach-Bibliotheken (type "businessEnglishCoach") laufen ueber denselben Dateiwaehler,
+  // werden aber getrennt von den Quiz-Bibliotheken importiert.
+  const { coachFiles, otherFiles: libraryFiles } = await partitionCoachFiles(jsonFiles)
 
   if (libraryFiles.length > 0) {
     const result = await importLibraryFiles(libraryFiles, props.currentRegistry)
     emit('libraries-loaded', result)
+  }
+  if (coachFiles.length > 0) {
+    emit('coach-loaded', await importCoachFiles(coachFiles, props.currentCoach))
   }
   if (audioFiles.length > 0) {
     emit('audio-pack-loaded', await loadAudioPacks(audioFiles))

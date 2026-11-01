@@ -37,13 +37,17 @@ export function createAudioPlayer({ createAudio = () => new Audio(), onError = (
   let currentUrl = null
   let unlocked = false
   let playbackRate = 1
+  // Einmalige Tempo-Vorgabe fuer genau eine Wiedergabe (z. B. "langsam" im Lerncoach);
+  // die globale Einstellung bleibt unveraendert. null = globales Tempo.
+  let rateOverride = null
 
   // Beim Laden einer neuen Quelle setzt der Browser playbackRate auf
   // defaultPlaybackRate zurueck - deshalb werden beide gesetzt, und zwar
   // NACH dem Setzen von src.
   function applyRate(target) {
-    target.defaultPlaybackRate = playbackRate
-    target.playbackRate = playbackRate
+    const rate = rateOverride ?? playbackRate
+    target.defaultPlaybackRate = rate
+    target.playbackRate = rate
   }
 
   function element() {
@@ -72,8 +76,9 @@ export function createAudioPlayer({ createAudio = () => new Audio(), onError = (
   }
 
   // Liefert { ok: true } | { ok: false, stale: true } | { ok: false, error }.
-  async function play(url) {
+  async function play(url, { rate = null } = {}) {
     const id = ++requestId
+    rateOverride = typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : null
     const target = element()
     try {
       target.pause()
@@ -130,7 +135,7 @@ export function createAudioPlayer({ createAudio = () => new Audio(), onError = (
   // Wirkt sofort auch auf laufende Wiedergabe und auf jede folgende.
   function setPlaybackRate(rate) {
     playbackRate = rate
-    if (audio && currentUrl) applyRate(audio)
+    if (audio && currentUrl) applyRate(audio) // ein aktives Einmal-Tempo (rateOverride) bleibt davon unberuehrt
   }
 
   return {

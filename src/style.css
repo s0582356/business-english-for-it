@@ -851,3 +851,56 @@ button.navigator-list-card:hover { border-color: var(--color-accent); }
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------------------- Lerncoach */
+.coach-run { display: grid; gap: 1rem; }
+.coach-progress { display: grid; gap: 0.35rem; }
+.coach-progress .eyebrow, .coach-step-label { margin: 0; }
+.coach-step-label { color: var(--color-text-secondary); font-size: 0.9rem; font-weight: 700; }
+.coach-progress-bar { height: 6px; border-radius: 999px; background: var(--color-surface-alt); overflow: hidden; }
+.coach-progress-fill { height: 100%; background: var(--color-primary); transition: width 0.2s ease; }
+
+.coach-paragraph { margin: 0 0 0.75rem; line-height: 1.55; }
+.coach-pattern {
+  margin: 0 0 0.75rem; padding: 0.75rem 1rem; border-left: 4px solid var(--color-primary);
+  border-radius: 0.5rem; background: var(--color-surface-alt); font-weight: 700; overflow-wrap: anywhere;
+}
+.coach-caution {
+  margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem; line-height: 1.5;
+  background: var(--color-warning-bg); color: var(--color-warning);
+}
+
+.coach-example-list { display: grid; gap: 0.75rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.coach-example {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.75rem 1rem; border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-surface-alt);
+}
+.coach-example-text { flex: 1 1 14rem; min-width: 0; }
+.coach-example-en { margin: 0 0 0.25rem; font-weight: 700; overflow-wrap: anywhere; }
+.coach-example-de { margin: 0; color: var(--color-text-secondary); }
+.coach-example-note { margin: 0.35rem 0 0; font-size: 0.85rem; color: var(--color-text-muted); }
+.coach-example-audio { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.coach-example-audio .audio-button-labelled { margin-bottom: 0; align-self: auto; }
+
+.coach-answer-input {
+  width: 100%; min-height: 6rem; margin-bottom: 0.75rem; padding: 12px 14px; resize: vertical;
+  border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text);
+  background: var(--color-surface-alt); font: inherit; font-size: 1rem;
+}
+.coach-compare h3 { margin: 1rem 0 0.35rem; font-size: 1rem; }
+.coach-checklist, .coach-model-answers, .coach-recap-points { margin: 0 0 0.75rem; padding-left: 1.25rem; line-height: 1.5; }
+.coach-own-sentence { margin: 0 0 0.5rem; overflow-wrap: anywhere; }
+.coach-self-assess { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.coach-self-assess-question { flex: 1 1 100%; margin: 0; font-weight: 700; }
+.coach-next-review { margin: 0.5rem 0 1rem; }
+
+.coach-unit-card { flex-wrap: wrap; }
+.coach-unit-card small { display: block; }
+.coach-unit-status { font-weight: 700; color: var(--color-text-secondary); }
+.coach-unit-notice { color: var(--color-warning); font-weight: 700; }
+.coach-unit-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.coach-unit-actions .primary-button, .coach-unit-actions .secondary-button { margin: 0; }
+
+.coach-card-status { margin: 0; font-weight: 700; color: var(--color-text-secondary); }
+.coach-card-status-loaded { color: var(--color-success); }
+.coach-card-status-conflict { color: var(--color-error); }

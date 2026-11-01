@@ -8,6 +8,7 @@
 
 import { computed, ref, shallowRef } from 'vue'
 import { getAudioFileNames } from './audioKeys.js'
+import { combineAudioPacks } from './audioPack.js'
 import { createAudioPlayer } from './audioPlayer.js'
 import { loadAudioSettings, parsePlaybackRate, saveAudioSettings } from './audioSettings.js'
 
@@ -153,7 +154,8 @@ export function createAudioController({ createAudio } = {}) {
   }
 
   // true = Wiedergabe gestartet. Wirft nie.
-  async function playFile(name, { owner = null, auto = false } = {}) {
+  // rate: optionales Einmal-Tempo nur fuer diese Wiedergabe (null = globales Tempo).
+  async function playFile(name, { owner = null, auto = false, rate = null } = {}) {
     if (!audioEnabled.value || !name || !pack.value) return false
     const seq = ++playSeq
     currentOwner = owner
@@ -165,7 +167,7 @@ export function createAudioController({ createAudio } = {}) {
       if (seq !== playSeq || !url) return false
     }
 
-    const playing = player.play(url)
+    const playing = player.play(url, { rate })
     releaseRetired() // der Player hat jetzt eine neue Quelle: zurueckgestellte URLs freigeben
     const result = await playing
     if (seq !== playSeq || result.stale) return false
@@ -192,6 +194,61 @@ export function createAudioController({ createAudio } = {}) {
     packRevision.value++
     autoplayBlocked.value = false
     previous?.close?.()
+  }
+
+  // Ergaenzt das aktive Pack, statt es zu ersetzen (z. B. W2-Audio plus Lerncoach-Audio).
+  // Jedes ZIP (Teil) des neuen Packs wird einzeln geprueft:
+  //   - derselbe Dateiname wie ein geladenes ZIP ersetzt dieses (erneutes Laden), sofern das neue ZIP
+  //     nicht mit anderen geladenen ZIPs kollidiert;
+  //   - ueberschneiden sich Audio-Dateinamen mit einem anderen geladenen ZIP, wird NUR dieses ZIP abgelehnt
+  //     (nichts wird still ueberschrieben); unabhaengige ZIPs desselben Imports werden trotzdem ergaenzt.
+  // Rueckgabe: { ok, accepted: [Dateinamen], rejected: [{ fileName, names }] }; ok = mindestens ein ZIP aktiv uebernommen.
+  // Wird nichts uebernommen, bleibt der bisherige Zustand voellig unveraendert.
+  function addPack(newPack) {
+    const partsOf = (candidate) => candidate.parts ?? [candidate]
+    const incoming = partsOf(newPack)
+    const current = pack.value
+    if (!current) {
+      setPack(newPack)
+      return { ok: true, accepted: incoming.map((part) => part.fileName), rejected: [] }
+    }
+
+    const existing = partsOf(current)
+    const accepted = []
+    const rejected = []
+    for (const part of incoming) {
+      const taken = new Set(existing.filter((other) => other.fileName !== part.fileName).flatMap((other) => other.names()))
+      const names = part.names().filter((name) => taken.has(name))
+      if (names.length > 0) rejected.push({ part, names })
+      else accepted.push(part)
+    }
+
+    let combined = null
+    if (accepted.length > 0) {
+      const replacedNames = new Set(accepted.map((part) => part.fileName))
+      try {
+        combined = combineAudioPacks([...existing.filter((part) => !replacedNames.has(part.fileName)), ...accepted])
+      } catch {
+        // Unerwartete Ueberschneidung der neuen ZIPs untereinander: nichts uebernehmen, Zustand bleibt.
+        rejected.push(...accepted.map((part) => ({ part, names: [] })))
+        accepted.length = 0
+      }
+    }
+    for (const entry of rejected) entry.part.close?.()
+    const result = { ok: accepted.length > 0, accepted: accepted.map((part) => part.fileName), rejected: rejected.map((entry) => ({ fileName: entry.part.fileName, names: entry.names })) }
+    if (!combined) return result
+
+    // Behaltene Teile leben im neuen kombinierten Pack weiter: nur ersetzte Teile werden geschlossen.
+    const replaced = existing.filter((part) => accepted.some((candidate) => candidate.fileName === part.fileName))
+    stop()
+    releaseAllUrls()
+    disposed = false
+    broken.clear()
+    pack.value = combined
+    packRevision.value++
+    autoplayBlocked.value = false
+    for (const part of replaced) part.close?.()
+    return result
   }
 
   function persist() {
@@ -239,6 +296,7 @@ export function createAudioController({ createAudio } = {}) {
     brokenRevision,
     autoplayBlocked,
     setPack,
+    addPack,
     setAudioEnabled,
     setAutoPlay,
     setPlaybackRate,

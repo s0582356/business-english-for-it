@@ -99,6 +99,8 @@ describe('LearningNavigator', () => {
 describe('LearningNavigator - W3-Gruppe', () => {
   const W2_TITLES = ['Business Telephoning', 'Business Email Writing', 'Business & Professional Vocabulary', 'Professional Socialising & Opinions']
   const W3_TITLES = ['Unterricht & Lernmaterialien', 'Klausurtraining', 'Präsentationstraining']
+  // Auftrag 035: die Lerncoach-Kachel steht als eigene Karte NACH den drei Bereichen (sie ist kein Bereich, siehe Coach-Tests).
+  const COACH_TITLE = 'Mein Lerncoach – Englisch Schritt für Schritt'
 
   function neutralLibrary(areaTitle = 'Neutral Area') {
     return {
@@ -136,9 +138,9 @@ describe('LearningNavigator - W3-Gruppe', () => {
     expect(wrapper.emitted('open-area')).toBeUndefined()
   })
 
-  it('zeigt in der Gruppe genau die drei W3-Bereiche, noch nicht geladen und mit Import-Hinweis', async () => {
+  it('zeigt in der Gruppe genau die drei W3-Bereiche (plus die eigenständige Lerncoach-Kachel), noch nicht geladen und mit Import-Hinweis', async () => {
     const wrapper = mountNavigator({ libraryByAreaId: {}, selectedGroupId: 'w3' })
-    expect(cardTitles(wrapper)).toEqual(W3_TITLES)
+    expect(cardTitles(wrapper)).toEqual([...W3_TITLES, COACH_TITLE])
     expect(wrapper.findAll('.navigator-card-missing')).toHaveLength(3)
     expect(wrapper.text()).toContain('Noch nicht geladen')
     expect(wrapper.find('.navigator-card-group').exists()).toBe(false)
@@ -216,7 +218,7 @@ describe('LearningNavigator - W3-Gruppe', () => {
       await wrapper.setProps({ libraryByAreaId: { w3: neutralLibrary('Neutral W3 Area'), 'w3-unterricht': neutralLibrary() } })
       expect(wrapper.text()).toContain('1 von 3 Bereichen geladen')
       await wrapper.setProps({ selectedGroupId: 'w3' })
-      expect(cardTitles(wrapper)).toEqual(W3_TITLES)
+      expect(cardTitles(wrapper)).toEqual([...W3_TITLES, COACH_TITLE])
       await wrapper.setProps({ selectedGroupId: null })
       await wrapper.setProps({ conflictsByAreaId: { w3: { areaId: 'w3' } }, libraryByAreaId: { 'w3-unterricht': neutralLibrary() } })
       expect(wrapper.findAll('.navigator-card-group')).toHaveLength(1)

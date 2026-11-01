@@ -82,14 +82,43 @@ describe('Audio-Pack Reimport: Zustand und UI bleiben konsistent', () => {
     expect(wrapper.text()).toContain('Audio-Pack dup.zip: Audio-Pack ungültig: 1 doppelte Audio-Dateinamen im ZIP. Der bisher geladene Audio-Pack bleibt aktiv.')
   })
 
-  it('gueltiger zweiter Import ersetzt den alten Pack (UI zeigt den neuen)', async () => {
-    const { wrapper, importer } = await appWithValidPack()
+  // Auftrag 035: ein zweites, anderes ZIP (z. B. Lerncoach-Audio) ergaenzt das aktive Pack, statt es zu ersetzen.
+  it('gueltiger zweiter Import mit anderem ZIP ergaenzt den alten Pack (beide in der UI, keine Ersetzung)', async () => {
+    const { wrapper, importer, pack } = await appWithValidPack()
     const next = await makeZip({ 'b__y__q__33333333.mp3': new Uint8Array([3]) }, 'neu.zip')
     await importer.vm.$emit('audio-pack-loaded', await loadAudioPacks([next]))
     await flushPromises()
     expect(wrapper.text()).toContain('Audio-Pack geladen: neu.zip (1 Audio-Dateien)')
-    expect(wrapper.text()).not.toContain('Audio-Pack geladen: business-english-audio-v1.zip')
+    expect(wrapper.text()).toContain(`Audio-Pack geladen: ${pack.fileName}`)
     expect(wrapper.text()).not.toContain('Dieses ZIP wird nicht verwendet.')
+    // das alte Audio laeuft weiter
+    await startLearning(wrapper)
+    await vi.waitFor(() => expect(audioElement.realPlays).toHaveLength(1))
+  })
+
+  it('dasselbe ZIP (gleicher Dateiname) erneut gewaehlt ersetzt sein altes Gegenstueck und wird nicht doppelt gelistet', async () => {
+    const { wrapper, importer } = await appWithValidPack()
+    const first = await makeZip({ 'b__y__q__33333333.mp3': new Uint8Array([3]) }, 'neu.zip')
+    await importer.vm.$emit('audio-pack-loaded', await loadAudioPacks([first]))
+    const again = await makeZip({ 'b__y__q__33333333.mp3': new Uint8Array([3]), 'b__y__s__44444444.mp3': new Uint8Array([4]) }, 'neu.zip')
+    await importer.vm.$emit('audio-pack-loaded', await loadAudioPacks([again]))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Audio-Pack geladen: neu.zip (2 Audio-Dateien)')
+    expect(wrapper.text()).not.toContain('Audio-Pack geladen: neu.zip (1 Audio-Dateien)')
+    expect(wrapper.text()).toContain('Audio-Pack geladen: business-english-audio-v1.zip')
+  })
+
+  it('kollidierende Audio-Dateinamen mit einem anderen geladenen Pack: nichts wird ueberschrieben, Kollision wird gemeldet, alter Pack bleibt aktiv', async () => {
+    const { wrapper, importer, pack } = await appWithValidPack()
+    const clashName = pack.names()[0]
+    const clash = await makeZip({ [clashName]: new Uint8Array([9]) }, 'konflikt.zip')
+    await importer.vm.$emit('audio-pack-loaded', await loadAudioPacks([clash]))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Audio-Pack konflikt.zip: Audio-Pack ungültig: Audio-Dateinamen kommen auch in einem bereits geladenen Pack vor. Der bisher geladene Audio-Pack bleibt aktiv.')
+    expect(wrapper.text()).toContain(`Audio-Pack geladen: ${pack.fileName}`)
+    expect(wrapper.text()).not.toContain('Audio-Pack geladen: konflikt.zip')
+    await startLearning(wrapper)
+    await vi.waitFor(() => expect(audioElement.realPlays).toHaveLength(1))
   })
 
   it('ohne vorherigen Pack bleibt die bisherige Meldung (kein Audio, Libraries ok)', async () => {

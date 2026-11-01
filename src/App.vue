@@ -6,9 +6,12 @@ import ChoiceCard from './components/ChoiceCard.vue'
 import OrderedStepsTrainer from './components/OrderedStepsTrainer.vue'
 import GapInputTrainer from './components/GapInputTrainer.vue'
 import LearningNavigator from './components/LearningNavigator.vue'
+import CoachUnitList from './components/CoachUnitList.vue'
+import CoachRunner from './components/CoachRunner.vue'
 import { AUDIO_CONTROLLER_KEY, createAudioController } from './utils/audioController.js'
 import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN, PLAYBACK_RATE_STEP, formatPlaybackRate } from './utils/audioSettings.js'
 import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
+import { coachConflictMessage } from './utils/coachConflictMessage.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
 
@@ -44,17 +47,28 @@ const audioLoaded = ref([])
 const audioErrors = ref([])
 const audioErrorNote = ref('')
 
+// Audio-Packs werden ergaenzt (z. B. W2-Audio + Lerncoach-Audio), nicht ersetzt. Ein erneut gewaehltes
+// ZIP mit demselben Dateinamen ersetzt sein altes Gegenstueck; kollidieren Audio-Dateinamen mit einem
+// anderen geladenen Pack, bleibt der bisherige Zustand aktiv und die Kollision wird gemeldet.
 function onAudioPackLoaded({ pack, report }) {
   if (pack) {
-    audio.setPack(pack)
-    audioLoaded.value = report.loaded
-    audioErrorNote.value = 'Dieses ZIP wird nicht verwendet.'
-  } else {
-    // Kein gueltiger neuer Pack: ein bisher gueltiger Pack bleibt aktiv (und wird weiter angezeigt).
-    audioErrorNote.value = audio.hasPack.value
-      ? 'Der bisher geladene Audio-Pack bleibt aktiv.'
-      : 'Die Lernbibliotheken funktionieren trotzdem, nur ohne Audio.'
+    // Jedes neue ZIP wird einzeln gegen das aktive Pack geprueft: ein kollidierendes ZIP wird abgelehnt,
+    // unabhaengige gueltige ZIPs desselben Imports werden trotzdem ergaenzt.
+    const added = audio.addPack(pack)
+    const accepted = new Set(added.accepted)
+    const loadedNow = report.loaded.filter((entry) => accepted.has(entry.fileName))
+    audioLoaded.value = [...audioLoaded.value.filter((entry) => !accepted.has(entry.fileName)), ...loadedNow]
+    audioErrors.value = [
+      ...report.errors,
+      ...added.rejected.map((entry) => ({ fileName: entry.fileName, reason: 'Audio-Pack ungültig: Audio-Dateinamen kommen auch in einem bereits geladenen Pack vor.' })),
+    ]
+    audioErrorNote.value = loadedNow.length > 0 ? 'Dieses ZIP wird nicht verwendet.' : 'Der bisher geladene Audio-Pack bleibt aktiv.'
+    return
   }
+  // Kein gueltiger neuer Pack: ein bisher gueltiger Pack bleibt aktiv (und wird weiter angezeigt).
+  audioErrorNote.value = audio.hasPack.value
+    ? 'Der bisher geladene Audio-Pack bleibt aktiv.'
+    : 'Die Lernbibliotheken funktionieren trotzdem, nur ohne Audio.'
   audioErrors.value = report.errors
 }
 
@@ -75,7 +89,35 @@ onBeforeUnmount(() => {
   audio.dispose()
 })
 
-const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result'
+const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result' | 'coach' | 'coach-run'
+
+// Lerncoach: eigene Bibliothek (nur im Speicher), eigener Fortschritt (coachStorage.js).
+const coachRegistry = ref({ entry: null, conflict: null })
+const coachReport = ref(null)
+const coachHadLibraryBefore = ref(false) // war vor dem letzten Coach-Import eine Bibliothek geladen? (nur fuer die Konfliktmeldung)
+const coachSession = ref(null) // { unitId, mode } waehrend 'coach-run'
+const coachUnit = computed(() => coachRegistry.value.entry?.library.units.find((unit) => unit.unitId === coachSession.value?.unitId) ?? null)
+
+function onCoachLoaded(result) {
+  coachHadLibraryBefore.value = Boolean(coachRegistry.value.entry)
+  coachRegistry.value = { entry: result.entry, conflict: result.conflict }
+  coachReport.value = result.report
+}
+
+function openCoach() {
+  if (!coachRegistry.value.entry || coachRegistry.value.conflict) return
+  view.value = 'coach'
+}
+
+function backFromCoach() {
+  view.value = 'home' // selectedGroupId bleibt: zurueck in die W3-Gruppe
+}
+
+function startCoachUnit({ unitId, mode }) {
+  if (!coachRegistry.value.entry?.library.units.some((unit) => unit.unitId === unitId)) return
+  coachSession.value = { unitId, mode: mode === 'review' ? 'review' : 'learn' }
+  view.value = 'coach-run'
+}
 
 const libraryRegistry = ref({ libraryByAreaId: {}, conflictsByAreaId: {} })
 const importReport = ref(null)
@@ -345,6 +387,9 @@ function backToHome() {
         :item-statuses="itemStatuses"
         :resume-by-area-id="resumeByAreaId"
         :selected-group-id="selectedGroupId"
+        :coach-entry="coachRegistry.entry"
+        :coach-conflict="coachRegistry.conflict"
+        @open-coach="openCoach"
         @open-area="openArea"
         @resume-area="resumeArea"
         @open-group="openGroup"
@@ -354,6 +399,8 @@ function backToHome() {
       <PrivateContentImporter
         ref="importer"
         :current-registry="libraryRegistry"
+        :current-coach="coachRegistry"
+        @coach-loaded="onCoachLoaded"
         @libraries-loaded="onLibrariesLoaded"
         @audio-pack-loaded="onAudioPackLoaded"
       />
@@ -369,7 +416,30 @@ function backToHome() {
         <p v-for="entry in importReport.conflicts" :key="'conflict-' + entry.fileName" class="feedback-wrong">Konflikt bei „{{ entry.areaId }}": mehrere unterschiedliche Lernbibliotheken erkannt.</p>
         <p v-for="entry in importReport.errors" :key="'error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }}</p>
       </section>
+      <section v-if="coachReport" class="import-report" aria-label="Lerncoach-Bericht">
+        <p v-for="entry in coachReport.loaded" :key="'coach-loaded-' + entry.fileName" class="explanation">Lerncoach geladen: {{ entry.fileName }}</p>
+        <p v-for="entry in coachReport.upgrades" :key="'coach-upgrade-' + entry.fileName" class="explanation">Lerncoach aktualisiert auf Version {{ entry.libraryVersion }} (gespeicherter Lernstand bleibt erhalten)</p>
+        <p v-for="entry in coachReport.duplicates" :key="'coach-dup-' + entry.fileName" class="explanation">Lerncoach-Duplikat übersprungen: {{ entry.fileName }}</p>
+        <p v-for="entry in coachReport.ignored" :key="'coach-ignored-' + entry.fileName" class="explanation">Lerncoach ignoriert (ältere Version als die geladene oder eine andere gewählte Datei): {{ entry.fileName }}</p>
+        <p v-for="entry in coachReport.conflicts" :key="'coach-conflict-' + entry.fileName" class="feedback-wrong">{{ coachConflictMessage(entry, coachHadLibraryBefore) }}</p>
+        <p v-for="entry in coachReport.errors" :key="'coach-error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }}</p>
+      </section>
     </section>
+
+    <CoachUnitList
+      v-else-if="view === 'coach'"
+      :coach-entry="coachRegistry.entry"
+      @back="backFromCoach"
+      @start-unit="startCoachUnit"
+    />
+
+    <CoachRunner
+      v-else-if="view === 'coach-run' && coachUnit"
+      :key="`${coachUnit.unitId}:${coachSession.mode}`"
+      :unit="coachUnit"
+      :mode="coachSession.mode"
+      @back="view = 'coach'"
+    />
 
     <LearningNavigator
       v-else-if="view === 'lessons' || view === 'scenarios'"
