@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   COACH_STORAGE_KEY, COACH_UNREADABLE_KEY, completeCoachUnit, getCoachUnitState, getUnitStepOverview,
-  isReviewDue, nextReviewState, resetCoachPosition, saveCoachPosition, saveCoachStepResult,
+  isReviewDue, localDayStart, nextReviewState, resetCoachPosition, saveCoachPosition, saveCoachStepResult,
 } from '../coachStorage.js'
 import { PROGRESS_STORAGE_KEY, getItemStatus, recordItemResult } from '../progressStorage.js'
 import { validateCoachLibrary } from '../coachLibrary.js'
@@ -34,7 +34,10 @@ describe('Coach-Fortschritt: eigener Speicher, nur Metadaten', () => {
     for (const step of unitOf(lib).steps) saveCoachStepResult('u1', step, 'self-ok')
     const raw = window.localStorage.getItem(COACH_STORAGE_KEY)
     for (const secret of ['Right sentence one', 'WRONG-OPTION', 'ERKLAERUNG', 'Model sentence', 'Absatz eins', 'passes', 'Punkt eins']) expect(raw).not.toContain(secret)
-    expect(Object.keys(JSON.parse(raw).units.u1.steps['t-produce']).sort()).toEqual(['attempts', 'revision', 'status', 'updatedAt'])
+    const stored = JSON.parse(raw).units.u1.steps['t-produce']
+    expect(Object.keys(stored).sort()).toEqual(['attempts', 'revision', 'runs', 'status', 'updatedAt'])
+    expect(stored.runs).toHaveLength(1)
+    expect(Object.keys(stored.runs[0]).sort()).toEqual(['at', 'ok', 'rev', 'src'])
   })
 
   it('Resume: Position bleibt erhalten, Neustart setzt nur die Position zurueck', () => {
@@ -115,15 +118,20 @@ describe('Coach-Fortschritt: Bibliotheksversionen loeschen nichts still', () => 
 describe('Coach-Wiederholung (einfaches Intervall 1 / 3 / 7 Tage)', () => {
   const now = new Date('2026-11-02T08:00:00Z')
 
-  it('plant nach Schwierigkeiten morgen, sonst die naechste Stufe', () => {
+  it('plant nach Schwierigkeiten morgen, sonst die naechste Stufe - aber nur, wenn die Wiederholung faellig ist', () => {
     const first = nextReviewState(null, { hadTrouble: false }, now)
-    expect(first).toMatchObject({ box: 1, dueAt: new Date(now.getTime() + DAY).toISOString() })
-    const second = nextReviewState(first, { hadTrouble: false }, now)
-    expect(second).toMatchObject({ box: 2, dueAt: new Date(now.getTime() + 3 * DAY).toISOString() })
-    const third = nextReviewState(second, { hadTrouble: false }, now)
+    expect(first.box).toBe(1)
+    expect(first.dueAt).toBe(localDayStart(now, 1).toISOString()) // Beginn des naechsten lokalen Kalendertags
+    // Noch am selben Tag nochmals ueben: Plan bleibt exakt gleich (Details: coachReviewSchedule.test.js)
+    expect(nextReviewState(first, { hadTrouble: false }, now)).toEqual(first)
+    const later = new Date(now.getTime() + DAY) // naechster Tag: faellig
+    const second = nextReviewState(first, { hadTrouble: false }, later)
+    expect(second.box).toBe(2)
+    expect(second.dueAt).toBe(localDayStart(later, 3).toISOString())
+    const third = nextReviewState(second, { hadTrouble: false }, new Date(later.getTime() + 3 * DAY))
     expect(third.box).toBe(3)
-    expect(nextReviewState(third, { hadTrouble: false }, now).box).toBe(3) // Obergrenze
-    expect(nextReviewState(third, { hadTrouble: true }, now).box).toBe(1) // Rueckfall bei Schwierigkeiten
+    expect(nextReviewState(third, { hadTrouble: false }, new Date(later.getTime() + 20 * DAY)).box).toBe(3) // Obergrenze
+    expect(nextReviewState(third, { hadTrouble: true }, new Date(later.getTime() + 20 * DAY)).box).toBe(1) // Rueckfall bei Schwierigkeiten
   })
 
   it('abschliessen: Position leer, completedAt nur beim Lernen, Wiederholung faellig nach Ablauf', () => {

@@ -34,7 +34,10 @@ beforeEach(() => {
   audioElement = new FakeAudio()
   vi.stubGlobal('Audio', function FakeAudioCtor() { return audioElement })
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 async function mountApp({ coach = coachLibraryData(), quiz = true } = {}) {
   const wrapper = shallowMount(App, { global: { stubs: { ...FULL, PrivateContentImporter: ImporterStub } } })
@@ -173,8 +176,11 @@ describe('Lerncoach: Lernweg Verstehen -> Hoeren -> Ueben -> eigener Satz -> Wie
     expect(wrapper.text()).toContain('Fazit')
     expect(wrapper.text()).toContain('Morgen wiederholen.')
     await click(wrapper, 'Einheit abschließen')
-    expect(wrapper.text()).toContain('Einheit abgeschlossen')
-    expect(wrapper.text()).toContain('1 von 3 Übungen sicher gelöst.')
+    expect(wrapper.text()).toContain('Einheit durchgearbeitet')
+    // Getrennte Quellen statt einer vermischten Zahl: Choice/Gap automatisch, Freitext nur als Selbsteinschaetzung
+    expect(wrapper.text()).toContain('Automatisch geprüft (Auswahl, Lücken): 1 von 2 richtig.')
+    expect(wrapper.text()).toContain('Deine Selbsteinschätzung: 0× passt, 1× fast, 0× nochmal üben.')
+    expect(wrapper.text()).not.toContain('sicher gelöst')
     expect(wrapper.text()).toContain('Nächste Wiederholung empfohlen ab:')
 
     const state = getCoachUnitState('u1')
@@ -235,9 +241,14 @@ describe('Lerncoach: Lernweg Verstehen -> Hoeren -> Ueben -> eigener Satz -> Wie
     await click(wrapper, 'Einheit abschließen')
     const completedAt = getCoachUnitState('u1').completedAt
     await click(wrapper, 'Zur Lerncoach-Übersicht')
-    expect(wrapper.text()).toContain('Abgeschlossen')
+    expect(wrapper.get('.coach-unit-status').text()).toBe('Durchgearbeitet – Wiederholung nötig') // Durchgearbeitet heisst nie beherrscht
+    expect(wrapper.text()).not.toMatch(/gefestigt/i)
     expect(wrapper.text()).toContain('Nächste Wiederholung:')
+    expect(getCoachUnitState('u1').review.box).toBe(1)
 
+    // Am naechsten Tag (Wiederholung faellig): Datum vorstellen, damit die zeitliche Bedingung erfuellt ist
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(Date.now() + 36 * 60 * 60 * 1000))
     await click(wrapper, 'Wiederholen')
     expect(wrapper.text()).toContain('Wiederholung')
     expect(wrapper.text()).toContain('Schritt 1 von 1') // nur die falsch beantwortete Choice
@@ -246,11 +257,12 @@ describe('Lerncoach: Lernweg Verstehen -> Hoeren -> Ueben -> eigener Satz -> Wie
     expect(wrapper.text()).toContain('Richtig.')
     await click(wrapper, 'Ergebnis anzeigen')
     expect(wrapper.text()).toContain('Wiederholung abgeschlossen')
-    expect(wrapper.text()).toContain('1 von 1 Übungen sicher gelöst.')
+    expect(wrapper.text()).toContain('Automatisch geprüft (Auswahl, Lücken): 1 von 1 richtig.')
     const state = getCoachUnitState('u1')
     expect(state.completedAt).toBe(completedAt)
     expect(state.steps['t-choice'].status).toBe('correct')
-    expect(state.review.box).toBe(2)
+    expect(state.review.box).toBe(2) // faellige Wiederholung mit objektivem Erfolg: naechste Stufe
+    vi.useRealTimers()
   })
 
   it('geaenderter Schritt nach Bibliotheks-Upgrade: Liste meldet "Inhalt aktualisiert", Lernstand bleibt, Wiederholung nimmt den Schritt wieder auf', async () => {
@@ -339,7 +351,8 @@ describe('Lerncoach: Audio (bestehender Player, per Tipp, langsam)', () => {
     await click(wrapper, 'Weiter') // Choice
     expect(wrapper.find('[aria-label="Richtige Antwort anhören"]').exists()).toBe(false)
     await click(wrapper, 'Right sentence one.')
-    expect(wrapper.find('[aria-label="Richtige Antwort anhören"]').exists()).toBe(true)
+    // Die Audio-Datei wird asynchron aufgeloest (Hash): unter Last reicht ein einzelnes flushPromises nicht immer.
+    await vi.waitFor(() => expect(wrapper.find('[aria-label="Richtige Antwort anhören"]').exists()).toBe(true))
     await click(wrapper, 'Weiter')
     await wrapper.get('.gap-answer-input').setValue('passes')
     await click(wrapper, 'Antwort prüfen')
@@ -347,7 +360,7 @@ describe('Lerncoach: Audio (bestehender Player, per Tipp, langsam)', () => {
     expect(wrapper.find('[aria-label="Musterlösung anhören"]').exists()).toBe(false)
     await wrapper.get('.coach-answer-input').setValue('Mein Satz.')
     await click(wrapper, 'Mit Musterlösung vergleichen')
-    expect(wrapper.find('[aria-label="Musterlösung anhören"]').exists()).toBe(true)
+    await vi.waitFor(() => expect(wrapper.find('[aria-label="Musterlösung anhören"]').exists()).toBe(true))
     expect(wrapper.find('[aria-label="Musterlösung anhören"]').element.closest('.coach-compare')).not.toBeNull()
   })
 
@@ -371,7 +384,7 @@ describe('Lerncoach: Datenschutz im Quellcode', () => {
 
   it('Coach-Code nutzt weder IndexedDB, Cache API, Service Worker noch Netzwerk; einziger Speicher ist localStorage in coachStorage.js', () => {
     const files = collect(resolve(__dirname, '../..')).filter((path) => /(coach|Coach).*\.(js|vue)$/.test(path))
-    expect(files.map((path) => path.split('/').pop()).sort()).toEqual(['CoachExampleRow.vue', 'CoachProduceStep.vue', 'CoachRunner.vue', 'CoachUnitList.vue', 'coachConflictMessage.js', 'coachImport.js', 'coachLibrary.js', 'coachStorage.js'])
+    expect(files.map((path) => path.split('/').pop()).sort()).toEqual(['CoachExampleRow.vue', 'CoachProduceStep.vue', 'CoachRunner.vue', 'CoachUnitList.vue', 'coachConflictMessage.js', 'coachImport.js', 'coachLibrary.js', 'coachProgress.js', 'coachSentenceCheck.js', 'coachStorage.js'])
     for (const path of files) {
       const content = readFileSync(path, 'utf8')
       expect(content, path).not.toMatch(/indexedDB|caches\.open|serviceWorker|fetch\(|XMLHttpRequest|sendBeacon/)

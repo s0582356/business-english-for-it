@@ -40,3 +40,32 @@ export function withStep(data, stepId, change) {
   Object.assign(step, change)
   return copy
 }
+
+// Neutrale Bibliothek mit gefuehrtem Schreibtraining (Schritte mit "check"): eigener Satz (Position egal)
+// und eine Transferaufgabe (if-Teil am Ende). Alle Musterloesungen erfuellen ihren eigenen Strukturcheck.
+export function guidedLibraryData(overrides = {}) {
+  const data = coachLibraryData(overrides)
+  const steps = data.units[0].steps
+  const index = steps.findIndex((step) => step.stepId === 't-produce')
+  steps[index] = {
+    stepId: 't-produce',
+    type: 'produce',
+    check: { type: 'conditional-type-1', position: 'any' },
+    prompt: 'Schreibe einen Satz über einen Testlauf.',
+    checklist: ['Punkt eins.', 'Punkt zwei.'],
+    modelAnswers: ['If the test fails, we will stop the release.', 'We will stop the release if the test fails.'],
+    feedback: 'FEEDBACK-PRODUCE.',
+  }
+  steps.splice(index + 1, 0, {
+    stepId: 't-transfer',
+    type: 'produce',
+    variant: 'transfer',
+    hint: 'WORT-HINWEIS',
+    check: { type: 'conditional-type-1', position: 'end' },
+    prompt: 'Transfer: if am Ende.',
+    checklist: ['Transfer-Punkt.'],
+    modelAnswers: ['We will call you if the server stops.', 'The team will help if you ask.'],
+    feedback: 'FEEDBACK-TRANSFER.',
+  })
+  return data
+}

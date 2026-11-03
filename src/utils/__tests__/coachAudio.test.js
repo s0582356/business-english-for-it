@@ -8,7 +8,7 @@ import { describeSpokenTexts, getSpokenTexts } from '../audioText.js'
 import { PLAYBACK_RATE_MIN } from '../audioSettings.js'
 import { validateCoachLibrary } from '../coachLibrary.js'
 import { FakeAudio, createFakePack, installObjectUrlStub, packFor } from './audioTestHelpers.js'
-import { coachLibraryData } from './coachTestHelpers.js'
+import { coachLibraryData, guidedLibraryData } from './coachTestHelpers.js'
 
 const library = validateCoachLibrary(coachLibraryData())
 const steps = Object.fromEntries(library.units[0].steps.map((step) => [step.stepId, step]))
@@ -18,6 +18,13 @@ describe('Coach-Audio: Sprechtexte und Dateinamen (bestehende Regeln)', () => {
   it('Beispielsaetze: nur der englische Satz wird gesprochen, nie die deutsche Uebersetzung', () => {
     expect(getSpokenTexts(examples[0])).toEqual({ question: 'The test passes today.', solution: null })
     expect(JSON.stringify(examples.map(getSpokenTexts))).not.toContain('Der Test')
+  })
+
+  it('Gefuehrte Satzbildung (check, hint, variant): weiterhin nur die erste Musterloesung - weder Wortschatzhinweis noch Pruefung gelangen ins Audio', () => {
+    const guided = validateCoachLibrary(guidedLibraryData()).units[0].steps.find((step) => step.stepId === 't-transfer')
+    const spoken = getSpokenTexts(guided)
+    expect(spoken).toEqual({ question: null, solution: guided.modelAnswers[0] })
+    expect(JSON.stringify(spoken)).not.toContain('WORT-HINWEIS')
   })
 
   it('Eigene Satzbildung: nur die ERSTE Musterloesung, keine weiteren, keine Checkliste, kein Feedback, nie eine Nutzerantwort', () => {
@@ -166,5 +173,26 @@ describe.skipIf(!hasPrivateCoach)('Coach-Audio: echtes privates Paket', () => {
     const zip = await openAudioPack(file)
     expect(zip.names().sort()).toEqual(expected.sort())
     await zip.close()
+  })
+
+  it('Version 2: die zehn urspruenglichen Audiodateien sind unveraendert im Paket, dazu je eine Musterloesung pro Transferaufgabe', async () => {
+    const realLibrary = validateCoachLibrary(JSON.parse(readFileSync(PRIVATE_COACH, 'utf8')))
+    const file = new File([readFileSync(PRIVATE_ZIP)], 'business-english-audio-coach-v1.zip', { type: 'application/zip' })
+    const zip = await openAudioPack(file)
+    const names = zip.names()
+    await zip.close()
+    expect(names).toHaveLength(12)
+    // Dateinamen der Version 1 (Hash des Sprechtexts): aendert sich ein Text, aendert sich der Name
+    for (const original of [
+      'cond1-ex-1__q__8a712ce1', 'cond1-ex-2__q__883f394e', 'cond1-ex-3__q__9a869c2a', 'cond1-ex-4__q__29b1785c', 'cond1-ex-5__q__3924a496',
+      'cond1-choice__q__9ae76bbb', 'cond1-choice__s__fc59ec5e', 'cond1-gap__q__08ff9ae5', 'cond1-gap__s__a7acd97c', 'cond1-produce__s__3a7141e5',
+    ]) expect(names).toContain(`w3-lerncoach__${original}.mp3`)
+    const transfer = realLibrary.units[0].steps.filter((step) => step.variant === 'transfer')
+    expect(transfer).toHaveLength(2)
+    for (const step of transfer) {
+      const fileNames = await getAudioFileNames(step.areaId, step)
+      expect(fileNames.q).toBeNull() // Aufgabenstellung ist deutsch und wird nicht vorgelesen
+      expect(names).toContain(fileNames.s) // genau eine Musterloesung (die erste) pro Transferaufgabe
+    }
   })
 })

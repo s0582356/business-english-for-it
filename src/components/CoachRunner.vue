@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
 import ChoiceCard from './ChoiceCard.vue'
 import GapInputTrainer from './GapInputTrainer.vue'
 import CoachExampleRow from './CoachExampleRow.vue'
@@ -21,8 +21,10 @@ const audio = inject(AUDIO_CONTROLLER_KEY, null)
 function buildStepList() {
   if (props.mode !== 'review') return props.unit.steps
   const exercises = props.unit.steps.filter(isExerciseStep)
-  const { difficult, stale } = getUnitStepOverview(props.unit)
-  const focus = exercises.filter((step) => difficult.includes(step.stepId) || stale.includes(step.stepId))
+  const { difficult, stale, open } = getUnitStepOverview(props.unit)
+  // Auch neu hinzugekommene (noch nie geloeste) Uebungen kommen in die Wiederholung, damit sie in einer bereits
+  // durchgearbeiteten Einheit nicht untergehen.
+  const focus = exercises.filter((step) => difficult.includes(step.stepId) || stale.includes(step.stepId) || open.includes(step.stepId))
   return focus.length > 0 ? focus : exercises
 }
 
@@ -39,9 +41,16 @@ const selectedAnswer = ref(null)
 const isAnswered = ref(false)
 const finished = ref(false)
 const summary = ref(null)
-const exercisesDone = ref(0)
-const exercisesGood = ref(0)
+// Getrennte Zaehler je Quelle - nichts wird zu einer Gesamtzahl "sicher gelöst" vermischt.
+const stats = reactive({ autoDone: 0, autoOk: 0, structureDone: 0, structureMet: 0, unclear: 0, selfOk: 0, selfAlmost: 0, selfAgain: 0, improved: 0, gaveUp: 0 })
 const troubleIds = new Set()
+// Wortgleiche Saetze aus der Lektion zaehlen beim Freitext als Abschreiben.
+const referenceSentences = props.unit.steps.flatMap((unitStep) => {
+  if (unitStep.type === 'examples') return unitStep.examples.map((example) => example.en)
+  if (unitStep.type === 'produce') return unitStep.modelAnswers
+  if (unitStep.type === 'choice') return [unitStep.correctAnswer]
+  return []
+})
 const exampleAudioAvailable = ref(null)
 
 const step = computed(() => steps[index.value])
@@ -61,12 +70,30 @@ watch([step, () => audio?.packRevision.value], async ([current]) => {
   if (step.value === current) exampleAudioAvailable.value = resolved.some((files) => files.q)
 }, { immediate: true })
 
-function record(status) {
-  saveCoachStepResult(props.unit.unitId, step.value, status)
+function record(status, details = {}) {
+  saveCoachStepResult(props.unit.unitId, step.value, status, new Date(), details)
   if (status === 'seen') return
-  exercisesDone.value++
-  if (status === 'correct' || status === 'self-ok') exercisesGood.value++
-  else troubleIds.add(step.value.stepId)
+  const produce = details.produce
+  let trouble = status === 'incorrect' || status === 'self-almost' || status === 'self-again' || status === 'gave-up'
+  if (step.value.type === 'choice' || step.value.type === 'gap') {
+    stats.autoDone++
+    if (status === 'correct') stats.autoOk++
+  } else if (produce?.checked) {
+    if (!produce.gaveUp) {
+      stats.structureDone++
+      if (produce.final === 'met' && !produce.copied) stats.structureMet++
+      if (produce.final === 'unclear') stats.unclear++ // bearbeitet, aber nicht bestaetigt: kein objektiver Erfolg
+    }
+    if (produce.final === 'issues') trouble = true
+    if (produce.improved) stats.improved++
+    if (produce.gaveUp) stats.gaveUp++
+  } else if (status === 'gave-up') {
+    stats.gaveUp++
+  }
+  if (status === 'self-ok') stats.selfOk++
+  else if (status === 'self-almost') stats.selfAlmost++
+  else if (status === 'self-again') stats.selfAgain++
+  if (trouble) troubleIds.add(step.value.stepId)
 }
 
 function onChoiceSelect(option) {
@@ -80,14 +107,29 @@ function onGapCompleted({ correct }) {
   record(correct ? 'correct' : 'incorrect')
 }
 
-function onProduceCompleted({ status }) {
-  record(status)
+function onProduceCompleted({ status, produce }) {
+  record(status, { produce })
+}
+
+// Gibt es in dieser Einheit (aktueller Inhaltsstand) noch einen Freitext, der nur "nicht zuverlaessig pruefbar" war?
+// Das gilt auch dann, wenn andere Aufgaben desselben Durchgangs objektiv erfolgreich waren (gemischter Durchgang).
+function hasOpenUncertainty() {
+  const state = getCoachUnitState(props.unit.unitId)
+  return props.unit.steps.some((unitStep) => {
+    const saved = state.steps[unitStep.stepId]
+    return Boolean(saved) && saved.revision === unitStep.revision && saved.produce?.final === 'unclear' && !saved.produce.gaveUp
+  })
 }
 
 function finish() {
   const hadTrouble = troubleIds.size > 0
-  completeCoachUnit(props.unit.unitId, { hadTrouble, mode: props.mode })
-  summary.value = { hadTrouble, dueAt: getCoachUnitState(props.unit.unitId).review?.dueAt ?? null }
+  // Die Wiederholungsstufe steigt nur mit mindestens einem objektiven ERFOLG (automatisch richtig oder Struktur erfuellt).
+  // Bearbeitet heisst nicht erfolgreich: Selbsteinschaetzung zaehlt nicht. Bleibt irgendwo eine Unsicherheit (unclear)
+  // offen, bleibt der Wiederholungsplan unveraendert - die richtigen Choice-/Gap-Ergebnisse bleiben trotzdem gespeichert.
+  const objective = stats.autoOk + stats.structureMet > 0
+  const uncertain = hasOpenUncertainty()
+  completeCoachUnit(props.unit.unitId, { hadTrouble, mode: props.mode, objective, uncertain })
+  summary.value = { hadTrouble, uncertain, dueAt: getCoachUnitState(props.unit.unitId).review?.dueAt ?? null }
   finished.value = true
 }
 
@@ -116,11 +158,20 @@ function formatDate(iso) {
     <button type="button" class="back-button" @click="emit('back')">← Zur Lerncoach-Übersicht</button>
 
     <section v-if="finished" class="result-card coach-summary" aria-label="Zusammenfassung">
-      <p class="eyebrow">{{ mode === 'review' ? 'Wiederholung abgeschlossen' : 'Einheit abgeschlossen' }}</p>
+      <p class="eyebrow">{{ mode === 'review' ? 'Wiederholung abgeschlossen' : 'Einheit durchgearbeitet' }}</p>
       <h2>{{ unit.unitTitle }}</h2>
-      <p v-if="exercisesDone > 0" class="result-message">{{ exercisesGood }} von {{ exercisesDone }} Übungen sicher gelöst.</p>
+      <ul class="coach-summary-list" aria-label="Ergebnisse nach Quelle" lang="de">
+        <li v-if="stats.autoDone > 0"><strong>Automatisch geprüft</strong> (Auswahl, Lücken): {{ stats.autoOk }} von {{ stats.autoDone }} richtig.</li>
+        <li v-if="stats.structureDone > 0"><strong>Strukturcheck</strong> (eigene Sätze): bei {{ stats.structureMet }} von {{ stats.structureDone }} Sätzen wurde die Struktur erfüllt. Das ist keine Grammatikbewertung.</li>
+        <li v-if="stats.selfOk + stats.selfAlmost + stats.selfAgain > 0"><strong>Deine Selbsteinschätzung</strong>: {{ stats.selfOk }}× passt, {{ stats.selfAlmost }}× fast, {{ stats.selfAgain }}× nochmal üben.</li>
+        <li v-if="stats.unclear > 0"><strong>Nicht zuverlässig prüfbar</strong>: {{ stats.unclear }} {{ stats.unclear === 1 ? 'Satz' : 'Sätze' }}. Das ist kein Erfolgsnachweis; {{ stats.unclear === 1 ? 'er bleibt' : 'sie bleiben' }} zur erneuten Übung vorgemerkt.</li>
+        <li v-if="stats.improved > 0"><strong>Struktur im 2. Versuch verbessert</strong> (laut Strukturcheck, keine Grammatikbewertung): {{ stats.improved }}.</li>
+        <li v-if="stats.gaveUp > 0"><strong>Lösung direkt angezeigt</strong> (zählt nicht als gelöst): {{ stats.gaveUp }}.</li>
+      </ul>
       <p v-if="summary.hadTrouble" class="explanation">Einige Punkte waren noch nicht sicher. Sie kommen bei der nächsten Wiederholung wieder dran.</p>
-      <p v-else class="perfect-message">Alles sicher gelöst – trotzdem lohnt sich eine kurze Wiederholung.</p>
+      <p v-else-if="summary.uncertain" class="explanation" lang="de">Noch offen: Mindestens ein eigener Satz konnte nicht zuverlässig geprüft werden. Er bleibt zur erneuten Übung vorgemerkt. Die Wiederholungsstufe steigt dadurch nicht und ein bestehender Termin wird nicht weiter hinausgeschoben. Deine richtigen Auswahl- und Lückenaufgaben bleiben gespeichert.</p>
+      <p v-else class="perfect-message">In diesem Durchgang wurde kein Problem erkannt – eine kurze Wiederholung festigt trotzdem.</p>
+      <p class="explanation" lang="de">Durchgearbeitet heißt nicht beherrscht. Dass Auswahl- und Lückenaufgaben sicher sitzen, zeigt sich erst, wenn du sie an mindestens zwei verschiedenen Tagen richtig gelöst hast. Der Strukturcheck und deine Selbsteinschätzung zählen dafür nicht.</p>
       <p v-if="summary.dueAt" class="coach-next-review">Nächste Wiederholung empfohlen ab: <strong>{{ formatDate(summary.dueAt) }}</strong></p>
       <div class="result-actions">
         <button class="primary-button" type="button" @click="emit('back')">Zur Lerncoach-Übersicht</button>
@@ -183,6 +234,7 @@ function formatDate(iso) {
         v-else-if="step.type === 'produce'"
         :key="step.stepId"
         :step="step"
+        :references="referenceSentences"
         :is-last-item="isLast"
         @completed="onProduceCompleted"
         @next-item="advance"

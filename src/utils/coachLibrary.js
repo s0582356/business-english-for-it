@@ -12,12 +12,14 @@
 // ohne gespeicherte Lernstaende zu loeschen (siehe coachStorage.js).
 
 import { validateItem } from './contentValidation.js'
+import { checkSentence, validateCheckConfig } from './coachSentenceCheck.js'
 
 export const COACH_LIBRARY_TYPE = 'businessEnglishCoach'
 export const COACH_AREA_ID = 'w3-lerncoach'
 export const COACH_STEP_TYPES = ['explain', 'examples', 'choice', 'gap', 'produce', 'recap']
 // Schritte, die geuebt werden (Wiederholung, Resume-Statistik).
 export const COACH_EXERCISE_TYPES = ['choice', 'gap', 'produce']
+export const COACH_PRODUCE_VARIANTS = ['transfer']
 
 const SUPPORTED_SCHEMA_VERSIONS = [1]
 
@@ -117,6 +119,26 @@ function validateStep(rawStep, unitLabel, index, ids) {
     requireTextList(rawStep.modelAnswers, stepLabel, 'modelAnswers')
     requireText(rawStep.feedback, stepLabel, 'feedback')
     validated = { id: rawStep.stepId, itemId: rawStep.stepId, prompt: rawStep.prompt, checklist: [...rawStep.checklist], modelAnswers: [...rawStep.modelAnswers], feedback: rawStep.feedback }
+    // Optionale Felder fuer das gefuehrte Schreibtraining. Fehlen sie, bleibt der Schritt (und seine
+    // revision) exakt wie in Bibliotheksversion 1 - bestehende Lernstaende werden dadurch nicht veraltet.
+    if (rawStep.hint !== undefined) {
+      requireText(rawStep.hint, stepLabel, 'hint')
+      validated.hint = rawStep.hint
+    }
+    if (rawStep.variant !== undefined) {
+      if (!COACH_PRODUCE_VARIANTS.includes(rawStep.variant)) fail(`${stepLabel}: "variant" muss "${COACH_PRODUCE_VARIANTS.join('" oder "')}" sein.`)
+      validated.variant = rawStep.variant
+    }
+    if (rawStep.check !== undefined) {
+      const problem = validateCheckConfig(rawStep.check)
+      if (problem) fail(`${stepLabel}: "check" ${problem}`)
+      validated.check = { type: rawStep.check.type, position: rawStep.check.position }
+      // Keine Musterloesung darf der eigenen Pruefung widersprechen.
+      for (const model of validated.modelAnswers) {
+        const result = checkSentence(validated.check, model)
+        if (result.outcome !== 'met') fail(`${stepLabel}: Die Musterlösung „${model}“ widerspricht dem Strukturcheck der Aufgabe.`)
+      }
+    }
   } else {
     requireText(rawStep.title, stepLabel, 'title')
     requireTextList(rawStep.points, stepLabel, 'points')

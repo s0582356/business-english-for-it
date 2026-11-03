@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { COACH_AREA_ID, contentRevision, isCoachLibraryData, validateCoachLibrary } from '../coachLibrary.js'
-import { coachLibraryData, withStep } from './coachTestHelpers.js'
+import { checkSentence } from '../coachSentenceCheck.js'
+import { coachLibraryData, guidedLibraryData, withStep } from './coachTestHelpers.js'
 
 function expectInvalid(mutate, message) {
   const data = coachLibraryData()
@@ -92,9 +93,11 @@ describe.skipIf(!existsSync(PRIVATE_COACH))('Coach-Bibliothek: echte private Pil
 
   it('ist gueltig, hat den Versionsvertrag und genau die Pilot-Einheit mit dem vollen Lernweg', () => {
     const { libraryId, libraryVersion, areaId, units } = library()
-    expect({ libraryId, libraryVersion, areaId }).toEqual({ libraryId: 'business-english-w3-lerncoach-v1', libraryVersion: 1, areaId: 'w3-lerncoach' })
+    expect({ libraryId, libraryVersion, areaId }).toEqual({ libraryId: 'business-english-w3-lerncoach-v1', libraryVersion: 2, areaId: 'w3-lerncoach' })
     expect(units.map((unit) => unit.unitId)).toEqual(['cond-type-1'])
-    expect(units[0].steps.map((step) => step.type)).toEqual(['explain', 'examples', 'choice', 'gap', 'produce', 'recap'])
+    // Version 2: bestehende Schritt-IDs bleiben, zwei Transferaufgaben kommen vor dem Fazit dazu
+    expect(units[0].steps.map((step) => step.stepId)).toEqual(['cond1-explain', 'cond1-examples', 'cond1-choice', 'cond1-gap', 'cond1-produce', 'cond1-transfer-a', 'cond1-transfer-b', 'cond1-recap'])
+    expect(units[0].steps.map((step) => step.type)).toEqual(['explain', 'examples', 'choice', 'gap', 'produce', 'produce', 'produce', 'recap'])
     expect(units[0].steps.find((step) => step.type === 'examples').examples).toHaveLength(5)
   })
 
@@ -105,5 +108,56 @@ describe.skipIf(!existsSync(PRIVATE_COACH))('Coach-Bibliothek: echte private Pil
     const gap = steps.find((step) => step.type === 'gap')
     expect(gap.prompt.match(/_{2,}/g)).toHaveLength(1)
     expect(gap.acceptedAnswers).toEqual(['fails'])
+  })
+  it('Version 2: Transferaufgaben A (if vorn) und B (if hinten) mit Strukturcheck, Wortschatzhinweis und mehreren Musterloesungen', () => {
+    const steps = library().units[0].steps
+    const [a, b] = ['cond1-transfer-a', 'cond1-transfer-b'].map((id) => steps.find((step) => step.stepId === id))
+    expect(a).toMatchObject({ variant: 'transfer', check: { type: 'conditional-type-1', position: 'start' } })
+    expect(b).toMatchObject({ variant: 'transfer', check: { type: 'conditional-type-1', position: 'end' } })
+    for (const step of [a, b]) {
+      expect(step.hint).toBeTruthy()
+      expect(step.modelAnswers.length).toBeGreaterThanOrEqual(3)
+      // keine Musterloesung widerspricht dem eigenen Strukturcheck oder der Checkliste (auch die Varianten)
+      for (const model of step.modelAnswers) expect(checkSentence(step.check, model).outcome, model).toBe('met')
+    }
+    expect(a.prompt).toBeTruthy()
+    expect(b.prompt).toBeTruthy()
+  })
+
+  it('cond1-produce behaelt seine ID und bekommt nur den Strukturcheck dazu (sein Audiotext bleibt, siehe Audio-Test mit dem unveraenderten Dateinamen)', () => {
+    const produce = library().units[0].steps.find((step) => step.stepId === 'cond1-produce')
+    expect(produce.check).toEqual({ type: 'conditional-type-1', position: 'any' })
+    expect(produce.modelAnswers.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('Coach-Bibliothek: gefuehrtes Schreibtraining (check, hint, variant)', () => {
+  it('akzeptiert check/hint/variant bei produce und gibt sie im Schritt weiter', () => {
+    const steps = validateCoachLibrary(guidedLibraryData()).units[0].steps
+    const transfer = steps.find((step) => step.stepId === 't-transfer')
+    expect(transfer).toMatchObject({ variant: 'transfer', hint: 'WORT-HINWEIS', check: { type: 'conditional-type-1', position: 'end' } })
+  })
+
+  it('Schritte ohne die neuen Felder bleiben unveraendert (gleiche revision wie in Version 1)', () => {
+    const plain = validateCoachLibrary(coachLibraryData()).units[0].steps.find((step) => step.stepId === 't-produce')
+    expect(Object.keys(plain)).not.toContain('check')
+    expect(Object.keys(plain)).not.toContain('hint')
+    expect(Object.keys(plain)).not.toContain('variant')
+    const guided = validateCoachLibrary(guidedLibraryData()).units[0].steps.find((step) => step.stepId === 't-produce')
+    expect(guided.revision).not.toBe(plain.revision) // nur wer einen check hinzufuegt, aendert die revision
+  })
+
+  it('weist ungueltige Felder zurueck', () => {
+    const bad = (change, message) => expect(() => validateCoachLibrary(withStep(guidedLibraryData(), 't-transfer', change))).toThrow(message)
+    bad({ check: { type: 'frei-erfunden', position: 'end' } }, '"check"')
+    bad({ check: { type: 'conditional-type-1', position: 'mitte' } }, 'position')
+    bad({ check: 'ja' }, '"check"')
+    bad({ variant: 'bonus' }, '"variant"')
+    bad({ hint: '  ' }, '"hint"')
+  })
+
+  it('eine Musterloesung, die dem eigenen Strukturcheck widerspricht, verhindert den Import', () => {
+    expect(() => validateCoachLibrary(withStep(guidedLibraryData(), 't-transfer', { modelAnswers: ['We will call you if the server stops.', 'If the server will stop, we will call you.'] }))).toThrow('widerspricht dem Strukturcheck')
+    expect(() => validateCoachLibrary(withStep(guidedLibraryData(), 't-transfer', { modelAnswers: ['If the server stops, we will call you.'] }))).toThrow('widerspricht dem Strukturcheck') // Position "end" verlangt
   })
 })
