@@ -6,6 +6,7 @@
 import { fingerprintFile } from './fingerprint.js'
 import { classifyIncomingLibrary } from './libraryImport.js'
 import { isCoachLibraryData, validateCoachLibrary } from './coachLibrary.js'
+import { isOversizedFile, oversizeReason } from './importLimits.js'
 
 export const EMPTY_COACH_REGISTRY = Object.freeze({ entry: null, conflict: null })
 
@@ -17,6 +18,8 @@ export async function partitionCoachFiles(files) {
   for (const file of [...files]) {
     let isCoach = false
     try {
+      // Uebergrosse Dateien werden nicht gelesen; der normale Import meldet sie mit einer Groessenfehlermeldung.
+      if (isOversizedFile(file)) throw new Error('oversized')
       isCoach = isCoachLibraryData(JSON.parse(await file.text()))
     } catch {
       isCoach = false
@@ -36,7 +39,9 @@ export async function partitionCoachFiles(files) {
 //      unveraendert aktiv. Kandidaten mit niedrigerer Version werden als aelter ignoriert.
 //   4. Ein einzelner uebrig bleibender Kandidat wird wie bisher gegen die geladene Bibliothek geprueft
 //      (Laden, Upgrade, aelter ignoriert, Konflikt mit der geladenen Bibliothek).
-export async function importCoachFiles(files, currentRegistry = EMPTY_COACH_REGISTRY) {
+// `validate` ist austauschbar, damit weitere einzelne private Bibliotheken (z. B. Diagramm-Figuren) dieselbe
+// deterministische Batch-Logik nutzen; die Bibliothek braucht dafuer libraryId, libraryVersion und areaId.
+export async function importCoachFiles(files, currentRegistry = EMPTY_COACH_REGISTRY, validate = validateCoachLibrary) {
   const existing = currentRegistry.entry ?? null
   let entry = existing
   let conflict = currentRegistry.conflict ?? null
@@ -44,9 +49,13 @@ export async function importCoachFiles(files, currentRegistry = EMPTY_COACH_REGI
 
   const candidates = []
   for (const file of [...files]) {
+    if (isOversizedFile(file)) {
+      report.errors.push({ fileName: file.name, reason: oversizeReason() })
+      continue
+    }
     let library
     try {
-      library = validateCoachLibrary(JSON.parse(await file.text()))
+      library = validate(JSON.parse(await file.text()))
     } catch (error) {
       report.errors.push({ fileName: file.name, reason: error instanceof SyntaxError ? 'Datei ist kein gültiges JSON.' : error.message })
       continue

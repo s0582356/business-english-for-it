@@ -39,6 +39,16 @@
 
   --shadow-card: 0 10px 28px rgba(28, 33, 48, 0.08);
 
+  /* Diagramm-Reihen: farbenblind-taugliche Palette; zusaetzlich unterscheiden Marker und Strichart die Reihen. */
+  --chart-series-0: #0072b2;
+  --chart-series-1: #d55e00;
+  --chart-series-2: #009e73;
+  --chart-series-3: #b0518a;
+  --chart-series-4: #6c5aa8;
+  --chart-series-5: #8c6a2f;
+  --chart-grid: #d7dbe4;
+  --chart-zero: #838ba0;
+
   color: var(--color-text);
   background: var(--color-bg-root);
 }
@@ -72,6 +82,15 @@
   --color-error-bg: #3a2020;
 
   --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.45);
+
+  --chart-series-0: #56b4e9;
+  --chart-series-1: #e69f00;
+  --chart-series-2: #4fd1a1;
+  --chart-series-3: #e08bbd;
+  --chart-series-4: #b4a0ff;
+  --chart-series-5: #d9a58b;
+  --chart-grid: #323744;
+  --chart-zero: #7d8496;
 }
 
 * {
@@ -931,3 +950,89 @@ button.navigator-list-card:hover { border-color: var(--color-accent); }
   .coach-actions { flex-direction: column; }
   .coach-actions .primary-button, .coach-actions .secondary-button { width: 100%; }
 }
+
+/* ---------- Diagramm-Figuren (Visual Graph Pilot) ---------- */
+.quiz-main { min-width: 0; display: grid; gap: 14px; align-content: start; }
+.chart-figure { min-width: 0; max-width: 100%; margin: 0; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-card); }
+.chart-figure-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chart-title { margin: 0; min-width: 0; font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
+.chart-enlarge { min-height: 40px; padding: 6px 12px; border: 1px solid var(--color-border-muted); border-radius: 8px; color: var(--color-primary); background: transparent; font-weight: 700; cursor: pointer; }
+.chart-enlarge:hover { color: var(--color-primary-strong); background: var(--color-surface-alt); }
+.chart-enlarge:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.chart-plot { margin-top: 8px; }
+.chart-svg { display: block; width: 100%; height: auto; max-height: 440px; }
+.chart-gridline { stroke: var(--chart-grid); stroke-width: 1; }
+.chart-zero, .chart-axis { stroke: var(--chart-zero); stroke-width: 1.5; }
+.chart-tick { fill: var(--color-text-secondary); font-size: 16px; }
+.chart-axis-title { fill: var(--color-text); font-size: 16px; font-weight: 600; }
+.chart-line { fill: none; stroke: var(--chart-line-color, currentColor); stroke-width: 2.5; stroke-linejoin: round; }
+.chart-marker { fill: var(--chart-line-color, currentColor); stroke: var(--color-surface); stroke-width: 1; }
+.chart-bar { fill: var(--chart-line-color, currentColor); }
+.chart-series-0 { --chart-line-color: var(--chart-series-0); }
+.chart-series-1 { --chart-line-color: var(--chart-series-1); }
+.chart-series-2 { --chart-line-color: var(--chart-series-2); }
+.chart-series-3 { --chart-line-color: var(--chart-series-3); }
+.chart-series-4 { --chart-line-color: var(--chart-series-4); }
+.chart-series-5 { --chart-line-color: var(--chart-series-5); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0 0; padding: 0; list-style: none; }
+.chart-legend li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; color: var(--color-text); font-size: 0.92rem; }
+.chart-legend li span { min-width: 0; overflow-wrap: anywhere; }
+.chart-swatch { width: 28px; height: 14px; flex: none; }
+.chart-text { margin-top: 8px; color: var(--color-text-secondary); }
+.chart-text summary { cursor: pointer; font-weight: 600; min-height: 32px; }
+.chart-text summary:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.chart-text p { overflow-wrap: anywhere; }
+/* Eigener Scrollbereich: viele Reihen/Kategorien oder lange Namen verbreitern nie die Seite. */
+.chart-table-scroll { max-width: 100%; max-height: 320px; overflow: auto; margin-top: 6px; }
+.chart-table-scroll:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.chart-table { min-width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.chart-table caption { text-align: left; padding-bottom: 4px; font-weight: 600; }
+.chart-table th, .chart-table td { min-width: 5em; max-width: 16em; padding: 4px 8px; border: 1px solid var(--color-border); text-align: left; overflow-wrap: anywhere; }
+.chart-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(10, 12, 18, 0.72); }
+.chart-overlay-panel { width: min(960px, 100%); max-height: 100%; overflow: auto; padding: 14px 16px; border-radius: 12px; background: var(--color-surface); }
+.chart-overlay .chart-svg { max-height: calc(100vh - 170px); }
+.chart-overlay-panel { min-width: 0; }
+@media (min-width: 900px) and (min-height: 1000px) {
+  /* Nur auf hohen Bildschirmen passen Abbildung und Frage zusammen in die Sicht; sonst scrollt die Abbildung mit
+     (sonst wuerde sie die Frage verdecken). */
+  .quiz-main > .chart-figure { position: sticky; top: 8px; z-index: 2; }
+  .quiz-main > .chart-figure .chart-svg { max-height: 230px; }
+}
+/* Die SVG-Schrift skaliert mit der Breite; auf schmalen Bildschirmen groesser setzen, damit sie lesbar bleibt. */
+@media (max-width: 720px) { .chart-tick, .chart-axis-title { font-size: 20px; } }
+@media (max-width: 480px) {
+  .chart-figure { padding: 10px; }
+  .chart-tick, .chart-axis-title { font-size: 24px; }
+}
+
+/* ---------- Sprechtraining zum Diagramm ---------- */
+.chart-speaking { margin-top: 10px; border-top: 1px solid var(--color-border); padding-top: 8px; }
+.chart-speaking summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; font-weight: 700; color: var(--color-primary); }
+.chart-speaking summary:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.chart-speaking-body { display: grid; gap: 10px; padding: 4px 0 6px; min-width: 0; }
+.chart-speaking-hint, .chart-speaking-small { margin: 0; overflow-wrap: anywhere; }
+.chart-speaking-small { color: var(--color-text-secondary); font-size: 0.88rem; }
+.chart-speaking-button { justify-self: start; min-height: 44px; padding: 8px 16px; border: 0; border-radius: 8px; color: var(--color-text-on-accent); background: var(--color-primary); font-weight: 700; cursor: pointer; white-space: normal; }
+.chart-speaking-button:hover { background: var(--color-primary-strong); }
+.chart-speaking-button:focus-visible, .chart-speaking-toggle input:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+.chart-speaking-secondary { color: var(--color-primary); background: transparent; border: 1px solid var(--color-border-muted); }
+.chart-speaking-secondary:hover { color: var(--color-primary-strong); background: var(--color-surface-alt); }
+.chart-speaking-list { display: grid; gap: 10px; margin: 0; padding-left: 1.4rem; }
+.chart-speaking-list li { padding-left: 4px; min-width: 0; }
+.chart-speaking-list li > span { display: block; overflow-wrap: anywhere; }
+.chart-speaking-role { color: var(--color-text-secondary); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.chart-speaking-en { font-size: 1.02rem; line-height: 1.45; color: var(--color-text); }
+.chart-speaking-de { margin-top: 2px; color: var(--color-text-secondary); line-height: 1.4; }
+.chart-speaking-note { margin-top: 2px; color: var(--color-text-secondary); font-size: 0.88rem; line-height: 1.4; padding-left: 8px; border-left: 3px solid var(--color-border-muted); }
+.chart-speaking-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.chart-speaking-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; }
+.chart-speaking-toggle input { width: 20px; height: 20px; flex: none; }
+/* Geoeffnetes Sprechtraining: Diagramm kompakter und nicht haftend, damit Saetze und Aufgabe Platz haben. */
+.chart-figure--speaking > .chart-plot .chart-svg { max-height: 220px; }
+@media (min-width: 900px) and (min-height: 1000px) { .quiz-main > .chart-figure.chart-figure--speaking { position: static; } }
+.chart-speaking summary { list-style: none; }
+.chart-speaking summary::-webkit-details-marker { display: none; }
+.chart-speaking summary::before { content: '▶'; display: inline-block; margin-right: 8px; font-size: 0.75em; transition: transform 0.15s; }
+.chart-speaking[open] > summary::before { transform: rotate(90deg); }
+.chart-speaking-button:disabled { color: var(--color-text-secondary); background: var(--color-surface-alt); cursor: not-allowed; opacity: 0.85; }
+.chart-speaking-button:disabled:hover { background: var(--color-surface-alt); }

@@ -8,10 +8,12 @@ import GapInputTrainer from './components/GapInputTrainer.vue'
 import LearningNavigator from './components/LearningNavigator.vue'
 import CoachUnitList from './components/CoachUnitList.vue'
 import CoachRunner from './components/CoachRunner.vue'
+import ChartFigure from './components/ChartFigure.vue'
 import { AUDIO_CONTROLLER_KEY, createAudioController } from './utils/audioController.js'
 import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN, PLAYBACK_RATE_STEP, formatPlaybackRate } from './utils/audioSettings.js'
 import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
 import { coachConflictMessage } from './utils/coachConflictMessage.js'
+import { findUnmatchedBindings, getFigureForItem } from './utils/figureLibrary.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
 
@@ -104,6 +106,28 @@ function onCoachLoaded(result) {
   coachReport.value = result.report
 }
 
+// Diagramm-Figuren: optionale private Datei (nur im Speicher). Ohne sie bleibt jede Aufgabe unveraendert.
+const figureRegistry = ref({ entry: null, conflict: null })
+const figureReport = ref(null)
+
+function onFiguresLoaded(result) {
+  figureRegistry.value = { entry: result.entry, conflict: result.conflict }
+  figureReport.value = result.report
+}
+
+const currentFigure = computed(() => {
+  const item = currentItem.value
+  if (!item || figureRegistry.value.conflict) return null
+  return getFigureForItem(figureRegistry.value.entry, item.areaId, item.id)
+})
+
+// Bindungen auf Aufgaben, die in der geladenen Bibliothek des Bereichs nicht vorkommen (unabhaengig von der Importreihenfolge).
+const unmatchedFigureItems = computed(() => {
+  const entry = figureRegistry.value.entry
+  if (!entry) return []
+  return findUnmatchedBindings(entry, libraryRegistry.value.libraryByAreaId[entry.library.areaId])
+})
+
 function openCoach() {
   if (!coachRegistry.value.entry || coachRegistry.value.conflict) return
   view.value = 'coach'
@@ -157,6 +181,10 @@ const selectedAnswer = ref(null)
 const isAnswered = ref(false)
 const score = ref(0)
 const answeredLog = ref([]) // [{ id, correct }]
+// Sprechhilfe zum Diagramm: frei, sobald die aktuelle Aufgabe tatsaechlich beantwortet wurde (richtig oder falsch).
+// Abgeleitet aus dem Antwortablauf (recordAnswer), nicht gespeichert; gilt nur fuer genau diese Aufgabe.
+const answeredItemId = ref(null)
+const speakingUnlocked = computed(() => Boolean(currentItem.value) && answeredItemId.value === currentItem.value.id)
 
 const currentItem = computed(() => runItems.value[currentIndex.value])
 const upcomingItem = computed(() => (view.value === 'run' ? runItems.value[currentIndex.value + 1] ?? null : null))
@@ -188,6 +216,7 @@ function startRun(items, { reviewMode = false } = {}) {
   currentIndex.value = 0
   selectedAnswer.value = null
   isAnswered.value = false
+  answeredItemId.value = null
   score.value = 0
   answeredLog.value = []
   view.value = 'run'
@@ -271,6 +300,7 @@ function backToLessons() {
 }
 
 function recordAnswer(id, correct) {
+  answeredItemId.value = id
   answeredLog.value.push({ id, correct })
   if (correct) score.value++
 
@@ -302,6 +332,7 @@ function nextItem() {
   currentIndex.value++
   selectedAnswer.value = null
   isAnswered.value = false
+  answeredItemId.value = null
 }
 
 function finishRun() {
@@ -400,7 +431,9 @@ function backToHome() {
         ref="importer"
         :current-registry="libraryRegistry"
         :current-coach="coachRegistry"
+        :current-figures="figureRegistry"
         @coach-loaded="onCoachLoaded"
+        @figures-loaded="onFiguresLoaded"
         @libraries-loaded="onLibrariesLoaded"
         @audio-pack-loaded="onAudioPackLoaded"
       />
@@ -423,6 +456,15 @@ function backToHome() {
         <p v-for="entry in coachReport.ignored" :key="'coach-ignored-' + entry.fileName" class="explanation">Lerncoach ignoriert (ältere Version als die geladene oder eine andere gewählte Datei): {{ entry.fileName }}</p>
         <p v-for="entry in coachReport.conflicts" :key="'coach-conflict-' + entry.fileName" class="feedback-wrong">{{ coachConflictMessage(entry, coachHadLibraryBefore) }}</p>
         <p v-for="entry in coachReport.errors" :key="'coach-error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }}</p>
+      </section>
+      <section v-if="figureReport || figureRegistry.conflict" class="import-report" aria-label="Figuren-Bericht">
+        <p v-for="entry in figureReport?.loaded ?? []" :key="'figure-loaded-' + entry.fileName" class="explanation">Figuren geladen: {{ entry.fileName }}</p>
+        <p v-for="entry in figureReport?.upgrades ?? []" :key="'figure-upgrade-' + entry.fileName" class="explanation">Figuren aktualisiert auf Version {{ entry.libraryVersion }}</p>
+        <p v-for="entry in figureReport?.duplicates ?? []" :key="'figure-dup-' + entry.fileName" class="explanation">Figuren-Duplikat übersprungen: {{ entry.fileName }}</p>
+        <p v-for="entry in figureReport?.ignored ?? []" :key="'figure-ignored-' + entry.fileName" class="explanation">Figuren ignoriert (ältere Version als die geladene oder eine andere gewählte Datei): {{ entry.fileName }}</p>
+        <p v-for="entry in figureReport?.conflicts ?? []" :key="'figure-conflict-' + entry.fileName" class="feedback-wrong">Konflikt bei den Figuren: „{{ entry.fileName }}" widerspricht einer anderen Figuren-Datei. Es werden keine Figuren angezeigt; die Aufgaben selbst bleiben unverändert nutzbar.</p>
+        <p v-for="entry in figureReport?.errors ?? []" :key="'figure-error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }} Die Aufgaben bleiben unverändert nutzbar.</p>
+        <p v-if="unmatchedFigureItems.length" class="feedback-wrong">Hinweis: {{ unmatchedFigureItems.length }} Figur-Bindung(en) passen zu keiner geladenen Aufgabe ({{ unmatchedFigureItems.join(', ') }}).</p>
       </section>
     </section>
 
@@ -461,39 +503,43 @@ function backToHome() {
         Automatisches Vorlesen wurde vom Browser blockiert – tippe auf 🔊, um die Frage zu hören.
       </p>
 
-      <ChoiceCard
-        v-if="currentItem.type === 'choice'"
-        :item="currentItem"
-        :selected-answer="selectedAnswer"
-        :is-answered="isAnswered"
-        :is-last-item="isLastItem"
-        @select-answer="selectAnswer"
-        @next-item="nextItem"
-        @finish="finishRun"
-      />
+      <div class="quiz-main">
+        <ChartFigure v-if="currentFigure" :key="`${currentItem.areaId}:${currentItem.id}`" :figure="currentFigure" :speaking-unlocked="speakingUnlocked" />
 
-      <OrderedStepsTrainer
-        v-else-if="currentItem.type === 'ordered'"
-        :item="currentItem"
-        :is-last-item="isLastItem"
-        @completed="onOrderedCompleted"
-        @next-item="nextItem"
-        @finish="finishRun"
-      />
+        <ChoiceCard
+          v-if="currentItem.type === 'choice'"
+          :item="currentItem"
+          :selected-answer="selectedAnswer"
+          :is-answered="isAnswered"
+          :is-last-item="isLastItem"
+          @select-answer="selectAnswer"
+          @next-item="nextItem"
+          @finish="finishRun"
+        />
 
-      <GapInputTrainer
-        v-else-if="currentItem.type === 'gap'"
-        :item="currentItem"
-        :is-last-item="isLastItem"
-        @completed="onGapCompleted"
-        @next-item="nextItem"
-        @finish="finishRun"
-      />
+        <OrderedStepsTrainer
+          v-else-if="currentItem.type === 'ordered'"
+          :item="currentItem"
+          :is-last-item="isLastItem"
+          @completed="onOrderedCompleted"
+          @next-item="nextItem"
+          @finish="finishRun"
+        />
 
-      <section v-else class="question-card unsupported-item" role="alert">
-        <h2>Dieser Aufgabentyp wird nicht unterstützt.</h2>
-        <p class="explanation">Die Aufgabe kann nicht sicher angezeigt werden. Bitte kehre zur Szenarioübersicht zurück.</p>
-      </section>
+        <GapInputTrainer
+          v-else-if="currentItem.type === 'gap'"
+          :item="currentItem"
+          :is-last-item="isLastItem"
+          @completed="onGapCompleted"
+          @next-item="nextItem"
+          @finish="finishRun"
+        />
+
+        <section v-else class="question-card unsupported-item" role="alert">
+          <h2>Dieser Aufgabentyp wird nicht unterstützt.</h2>
+          <p class="explanation">Die Aufgabe kann nicht sicher angezeigt werden. Bitte kehre zur Szenarioübersicht zurück.</p>
+        </section>
+      </div>
     </section>
 
     <section v-else-if="view === 'result'" class="result-card">

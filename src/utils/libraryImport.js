@@ -161,12 +161,18 @@ export function classifyIncomingLibrary(existingEntry, incomingEntry) {
   return { action: 'conflict', reason: 'different-library-id' }
 }
 
+import { isOversizedFile, oversizeReason } from './importLimits.js'
+
 export async function importLibraryFiles(files, currentRegistry = { libraryByAreaId: {}, conflictsByAreaId: {} }) {
   const libraryByAreaId = { ...currentRegistry.libraryByAreaId }
   const conflictsByAreaId = { ...currentRegistry.conflictsByAreaId }
   const report = { loaded: [], upgrades: [], duplicates: [], ignored: [], conflicts: [], errors: [] }
 
   for (const file of [...files]) {
+    if (isOversizedFile(file)) {
+      report.errors.push({ fileName: file.name, reason: oversizeReason() })
+      continue
+    }
     let parsed
     try {
       parsed = JSON.parse(await file.text())
