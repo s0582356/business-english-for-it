@@ -13,6 +13,7 @@ import { AUDIO_CONTROLLER_KEY, createAudioController } from './utils/audioContro
 import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN, PLAYBACK_RATE_STEP, formatPlaybackRate } from './utils/audioSettings.js'
 import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
 import { coachConflictMessage } from './utils/coachConflictMessage.js'
+import { createPrivateLibraryController } from './utils/privateLibraryController.js'
 import { findUnmatchedBindings, getFigureForItem } from './utils/figureLibrary.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
@@ -229,6 +230,17 @@ function onLibrariesLoaded(result) {
   view.value = 'home'
 }
 
+const privateLibraries = createPrivateLibraryController({
+  getRegistries: () => ({ quiz: libraryRegistry.value, coach: coachRegistry.value, figures: figureRegistry.value }),
+  apply: { quiz: onLibrariesLoaded, coach: onCoachLoaded, figures: onFiguresLoaded },
+})
+onMounted(() => {
+  privateLibraries.restore()
+})
+onBeforeUnmount(() => {
+  privateLibraries.dispose()
+})
+
 function openGroup(groupId) {
   selectedGroupId.value = groupId
 }
@@ -429,6 +441,7 @@ function backToHome() {
       />
       <PrivateContentImporter
         ref="importer"
+        :controller="privateLibraries"
         :current-registry="libraryRegistry"
         :current-coach="coachRegistry"
         :current-figures="figureRegistry"
