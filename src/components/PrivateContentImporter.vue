@@ -57,13 +57,12 @@ async function processFiles(files, input) {
   // .zip -> gemeinsames Audio-Pack, alles andere wie bisher -> Lernbibliotheken.
   // Die Libraries werden zuerst und unabhaengig vom Audio-Pack importiert:
   // ein defektes ZIP darf den Library-Import nie beeintraechtigen.
-  // Audio-Pakete (.zip) werden nur als lokale Objekt-URLs bereitgestellt. Audio wird NICHT gespeichert; gespeichert werden
-  // nur JSON-Bibliotheken.
+  // Audio-Pakete (.zip) speichert die App getrennt von den JSON-Bibliotheken (audioPackStore.js, siehe App.vue).
   controller.clearNotice()
   const { libraryFiles: jsonFiles, audioFiles } = splitImportFiles(files)
   const outcomes = await controller.importJson(jsonFiles)
   if (audioFiles.length > 0) {
-    emit('audio-pack-loaded', await loadAudioPacks(audioFiles))
+    emit('audio-pack-loaded', { ...(await loadAudioPacks(audioFiles)), files: audioFiles })
   }
   // Erst nach der Aktivierung lokal speichern: ein Speicherproblem beeintraechtigt den Import nie.
   await controller.persistOutcomes(outcomes)
@@ -202,7 +201,7 @@ const checkedLine = computed(() => {
           Wähle eine oder mehrere private JSON-Dateien aus (auch die optionale
           Figuren-Datei), bei Bedarf zusammen mit dem Audio-Pack (.zip). Jede Datei wird einzeln geprüft und nur im Browser
           gelesen - nicht hochgeladen. Gültige JSON-Bibliotheken merkt sich die App zusätzlich
-          nur auf diesem Gerät; Audio-Dateien und das Audio-Pack werden nicht gespeichert.
+          nur auf diesem Gerät, ebenso gültige Audio-Packs (.zip).
         </p>
       </div>
 

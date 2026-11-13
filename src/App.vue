@@ -14,6 +14,8 @@ import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN, PLAYBACK_RATE_STEP, formatPlaybac
 import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
 import { coachConflictMessage } from './utils/coachConflictMessage.js'
 import { createPrivateLibraryController } from './utils/privateLibraryController.js'
+import { loadAudioPacks } from './utils/audioPack.js'
+import { createAudioPackStorage } from './utils/audioPackStore.js'
 import { findUnmatchedBindings, getFigureForItem } from './utils/figureLibrary.js'
 
 const THEME_STORAGE_KEY = 'businessEnglishTheme'
@@ -66,14 +68,26 @@ function onAudioPackLoaded({ pack, report }) {
       ...added.rejected.map((entry) => ({ fileName: entry.fileName, reason: 'Audio-Pack ungültig: Audio-Dateinamen kommen auch in einem bereits geladenen Pack vor.' })),
     ]
     audioErrorNote.value = loadedNow.length > 0 ? 'Dieses ZIP wird nicht verwendet.' : 'Der bisher geladene Audio-Pack bleibt aktiv.'
-    return
+    return added.accepted
   }
   // Kein gueltiger neuer Pack: ein bisher gueltiger Pack bleibt aktiv (und wird weiter angezeigt).
   audioErrorNote.value = audio.hasPack.value
     ? 'Der bisher geladene Audio-Pack bleibt aktiv.'
     : 'Die Lernbibliotheken funktionieren trotzdem, nur ohne Audio.'
   audioErrors.value = report.errors
+  return []
 }
+
+// Importierte Audio-Packs (.zip) lokal speichern (IndexedDB, nur auf diesem Geraet) und beim Start ueber denselben
+// Importpfad wiederherstellen. Gespeichert werden nur ZIPs, die der Import tatsaechlich aktiviert hat; ungueltige
+// ZIPs veraendern den Speicher nie. Beim Wiederherstellen wird nichts abgespielt.
+const audioStorage = createAudioPackStorage()
+function onAudioPackImported(payload) {
+  const accepted = onAudioPackLoaded(payload)
+  audioStorage.save((payload.files ?? []).filter((file) => accepted.includes(file.name)))
+}
+// Jedes gespeicherte ZIP einzeln: ein defektes blockiert die anderen nicht.
+const restoreAudioPack = async (file) => onAudioPackLoaded(await loadAudioPacks([file])).includes(file.name)
 
 // iOS/Safari erlaubt programmatisches Abspielen erst, nachdem das (eine,
 // wiederverwendete) Audio-Element per Nutzergeste entsperrt wurde.
@@ -236,6 +250,7 @@ const privateLibraries = createPrivateLibraryController({
 })
 onMounted(() => {
   privateLibraries.restore()
+  audioStorage.restore(restoreAudioPack)
 })
 onBeforeUnmount(() => {
   privateLibraries.dispose()
@@ -448,8 +463,20 @@ function backToHome() {
         @coach-loaded="onCoachLoaded"
         @figures-loaded="onFiguresLoaded"
         @libraries-loaded="onLibrariesLoaded"
-        @audio-pack-loaded="onAudioPackLoaded"
+        @audio-pack-loaded="onAudioPackImported"
       />
+      <section class="import-report" aria-label="Audio-Packs auf diesem Gerät" data-audio-storage>
+        <p v-if="audioStorage.state.status === 'restoring'" class="explanation" role="status">Gespeicherte Audio-Packs werden wiederhergestellt …</p>
+        <p v-else-if="audioStorage.state.status === 'unavailable'" class="explanation">Audio-Packs können in diesem Browser nicht gespeichert werden. Sie gelten nur für diese Sitzung.</p>
+        <p v-else-if="audioStorage.state.status === 'error'" class="feedback-wrong">Der lokale Audio-Speicher konnte nicht gelesen werden.</p>
+        <p v-else-if="audioStorage.state.stored.length === 0" class="explanation">Auf diesem Gerät sind noch keine Audio-Packs gespeichert.</p>
+        <template v-else>
+          <p v-for="entry in audioStorage.state.stored" :key="'stored-audio-' + entry.fileName" class="explanation">
+            ✓ Audio-Pack gespeichert: {{ entry.fileName }} ({{ (entry.size / (1024 * 1024)).toFixed(1) }} MB){{ audioStorage.state.restored.includes(entry.fileName) ? ', beim Start wiederhergestellt' : '' }}
+          </p>
+        </template>
+        <p v-if="audioStorage.state.problem" class="feedback-wrong" role="alert">{{ audioStorage.state.problem }}</p>
+      </section>
       <section v-if="audioLoaded.length || audioErrors.length" class="import-report" aria-label="Audio-Pack-Bericht">
         <p v-for="entry in audioLoaded" :key="'audio-' + entry.fileName" class="explanation">Audio-Pack geladen: {{ entry.fileName }} ({{ entry.fileCount }} Audio-Dateien)</p>
         <p v-for="entry in audioErrors" :key="'audio-error-' + entry.fileName" class="feedback-wrong">Audio-Pack {{ entry.fileName }}: {{ entry.reason }} {{ audioErrorNote }}</p>

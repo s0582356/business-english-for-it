@@ -34,8 +34,8 @@ describe('Audio-Privacy', () => {
       const content = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/.*$/gm, '')
       if (path.endsWith('audioSettings.js')) continue // einziger erlaubter localStorage-Zugriff fuer Audio: zwei Booleans
       // Einziger erlaubter IndexedDB-Zugriff (Auftrag 089): lokaler Speicher fuer private JSON-Bibliotheken. Er akzeptiert
-      // nur die vier JSON-Arten (siehe privateLibraryStore.test.js); Audio und ZIP werden dort nie abgelegt.
-      if (path.endsWith('privateLibraryStore.js')) {
+      // nur die vier JSON-Arten (siehe privateLibraryStore.test.js). Auftrag 103: audioPackStore.js legt die Audio-ZIPs in einer EIGENEN Datenbank ab (audioPackStore.test.js).
+      if (path.endsWith('privateLibraryStore.js') || path.endsWith('audioPackStore.js')) {
         expect(content, path).not.toMatch(/caches\.open|serviceWorker/)
         continue
       }

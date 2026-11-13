@@ -50,7 +50,7 @@ export class PrivateStoreError extends Error {
   }
 }
 
-function mapError(error) {
+export function mapError(error) {
   if (error instanceof PrivateStoreError) return error
   const name = error?.name
   if (name === 'QuotaExceededError' || error?.code === 22) return new PrivateStoreError(STORE_ERROR.QUOTA, error)
