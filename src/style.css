@@ -1086,6 +1086,7 @@ button.navigator-list-card:hover { border-color: var(--color-accent); }
 .speaking-chunk:hover { border-color: var(--color-accent); }
 .speaking-chunk-placed { color: var(--color-text-on-accent); background: var(--color-primary); border-color: var(--color-primary); }
 .speaking-reset { justify-self: start; }
+.speaking-play { justify-self: start; padding: 8px 14px; }
 .speaking-solution { gap: 10px; }
 .speaking-dialog { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .speaking-turn { display: grid; gap: 2px; max-width: 92%; padding: 8px 12px; border-radius: 12px; background: var(--color-surface); border: 1px solid var(--color-border); overflow-wrap: anywhere; }

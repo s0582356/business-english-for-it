@@ -3,16 +3,14 @@
 // Die Musterantwort ist jederzeit per Knopfdruck sichtbar - ohne Eingabe, Aufnahme oder vorherige Bewertung.
 // Der Lernstatus ("beherrscht" / "noch ueben") wird lokal gespeichert (speakingProgress.js). Alle Texte laufen
 // ueber Vue-Interpolation (kein innerHTML).
-import { computed, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import SpeakingChart from './SpeakingChart.vue'
-import { SPEAKING_CATEGORIES, getSpeakingExercises, shuffleChunks, speakingAudioFile, splitSentences } from '../utils/speakingLibrary.js'
+import { AUDIO_CONTROLLER_KEY } from '../utils/audioController.js'
+import { SPEAKING_CATEGORIES, getSpeakingExercises, shuffleChunks, speakingAudioItem, splitSentences } from '../utils/speakingLibrary.js'
 import { SPEAKING_STATUS, loadSpeakingProgress, saveSpeakingProgress, withSpeakingStatus } from '../utils/speakingProgress.js'
 
 const props = defineProps({
   entry: { type: Object, required: true }, // aktive Sprech-Bibliothek { library, fingerprint, ... }
-  // Aufnahmen { [dateiname]: { url } }. Eine Uebung zeigt einen Player nur, wenn "<Uebungs-ID>.mp3" tatsaechlich geladen ist
-  // (spaeter ergaenzbarer eigener Audio-Pack); ohne Datei wird nichts als verfuegbar dargestellt.
-  tracks: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['back'])
 
@@ -58,11 +56,37 @@ const exercises = computed(() => {
 })
 const current = computed(() => exercises.value[index.value] ?? null)
 const currentStatus = computed(() => (current.value ? statusOf(current.value) : null))
-const track = computed(() => (current.value ? props.tracks[speakingAudioFile(current.value)] ?? null : null))
 const solutionId = computed(() => `speaking-solution-${current.value?.id}`)
+
+// Audio: die Aufnahme der Musterantwort kommt aus dem gemeinsamen Audio-Pack (ZIP, lokal gespeichert). Ohne Pack oder
+// ohne passende Datei wird kein Knopf angeboten. Der Controller ist optional (ohne ihn bleibt alles wie bisher).
+const audio = inject(AUDIO_CONTROLLER_KEY, null)
+const owner = Symbol('easy-speaking-audio')
+const audioFile = ref(null)
+const canPlay = computed(() => Boolean(audio) && audio.audioEnabled.value && Boolean(audioFile.value))
+let resolveSeq = 0
+
+async function resolveAudio() {
+  const seq = ++resolveSeq
+  audioFile.value = null
+  const exercise = current.value
+  if (!audio || !exercise) return
+  const files = await audio.resolveFiles(speakingAudioItem(exercise, library.areaId))
+  if (seq !== resolveSeq) return
+  audioFile.value = files.s
+  if (files.s) audio.prepare({ s: files.s })
+}
+
+function playAnswer() {
+  if (canPlay.value) audio.playFile(audioFile.value, { owner })
+}
+
+watch([() => current.value?.id, () => audio?.packRevision.value, () => audio?.brokenRevision.value], resolveAudio, { immediate: true })
+onBeforeUnmount(() => audio?.stop(owner))
 
 watch([categoryId, filter], () => { index.value = 0 })
 watch(() => current.value?.id, () => {
+  audio?.stop(owner)
   answerShown.value = false
   picked.value = []
 })
@@ -198,15 +222,12 @@ function roleLabel(key) {
         </dl>
       </section>
 
-      <div v-if="track" class="practice-audio">
-        <audio class="practice-audio-player" controls preload="metadata" :src="track.url" :aria-label="`Aufnahme: ${current.id}`" />
-      </div>
-
       <div class="practice-solution">
         <button type="button" class="secondary-button practice-solution-toggle" :aria-expanded="answerShown" :aria-controls="solutionId" @click="answerShown = !answerShown">
           {{ answerShown ? 'Musterantwort ausblenden' : 'Musterantwort anzeigen' }}
         </button>
         <div v-if="answerShown" :id="solutionId" class="practice-solution-body speaking-solution" role="region" aria-label="Musterantwort">
+          <button v-if="canPlay" type="button" class="secondary-button speaking-play" @click="playAnswer">🔊 Musterantwort anhören</button>
           <template v-if="current.turns">
             <h4>Musterdialog</h4>
             <ol class="speaking-dialog">

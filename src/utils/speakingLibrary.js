@@ -157,9 +157,20 @@ export function getSpeakingExercises(entry, categoryId) {
   return entry?.library?.exercises.filter((exercise) => exercise.category === categoryId) ?? []
 }
 
-// Dateiname einer spaeter ergaenzbaren Aufnahme (eigener Audio-Pack): "<Uebungs-ID>.mp3". Ohne geladene Datei wird nichts angezeigt.
-export function speakingAudioFile(exercise) {
-  return `${exercise.id}.mp3`
+// ---- Audio (Musterantwort als Aufnahme) ----
+// Gesprochen wird genau die englische Musterantwort: Antwort bzw. Zielsatz, beim Role Play alle Redebeitraege in
+// Reihenfolge. Die Aufnahme gehoert zur Musterantwort und wird erst mit ihr angeboten (nie vorab).
+export function speakingSpokenText(exercise) {
+  if (exercise.turns) return exercise.turns.map((turn) => turn.text).join('\n')
+  if (exercise.chunks) return exercise.targetSentence
+  return exercise.modelAnswer
+}
+
+// Adapter auf die vorhandene Audio-Logik (audioKeys.js): Als "Loesung" eines Auswahl-Items ergibt der Sprechtext
+// denselben Dateinamen, den App UND Generator berechnen (<areaId>__<id>__s__<hash8>.mp3). Aendert sich der Text,
+// findet die App kein altes Audio mehr, statt falsch zu sprechen.
+export function speakingAudioItem(exercise, areaId) {
+  return { areaId, id: exercise.id, itemId: exercise.id, type: 'choice', correctAnswer: speakingSpokenText(exercise) }
 }
 
 // Englische Musterantwort in einzelne Saetze (fuer die Argumente der Diskussionsfragen).

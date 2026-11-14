@@ -1,11 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 import { mount, shallowMount } from '@vue/test-utils'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import App from '../../App.vue'
 import EasySpeaking from '../EasySpeaking.vue'
 import LearningNavigator from '../LearningNavigator.vue'
-import { validateSpeakingLibrary } from '../../utils/speakingLibrary.js'
+import { AUDIO_CONTROLLER_KEY } from '../../utils/audioController.js'
+import { getAudioFileNames } from '../../utils/audioKeys.js'
+import { speakingAudioItem, speakingSpokenText, validateSpeakingLibrary } from '../../utils/speakingLibrary.js'
 import { importSpeakingFiles } from '../../utils/speakingImport.js'
 import { speakingData } from '../../utils/__tests__/speakingTestHelpers.js'
 
@@ -212,16 +215,77 @@ describe('EasySpeaking: Lernen und Wiederholen', () => {
   })
 })
 
-describe('EasySpeaking: Audio-Anbindung', () => {
-  it('zeigt ohne passende Datei kein Audio', () => {
-    const wrapper = mountSpeaking({ tracks: { 'anderes.mp3': { url: 'blob:x' } } })
-    expect(wrapper.find('audio').exists()).toBe(false)
-    expect(wrapper.text()).not.toMatch(/Aufnahme/)
+describe('EasySpeaking: Audio-Anbindung (gemeinsamer Audio-Controller)', () => {
+  // Minimaler Controller: Dateinamen kommen aus derselben App-Logik wie beim Generator (speakingAudioItem).
+  function fakeController(available) {
+    const played = []
+    return {
+      played,
+      audioEnabled: ref(true),
+      packRevision: ref(0),
+      brokenRevision: ref(0),
+      resolveFiles: async (item) => ({ q: null, s: (await getAudioFileNames(item.areaId, item)).s && available(item) ? (await getAudioFileNames(item.areaId, item)).s : null }),
+      prepare: vi.fn(),
+      playFile: (name, options) => { played.push([name, options.owner]); return Promise.resolve(true) },
+      stop: vi.fn(),
+    }
+  }
+  // Der Dateiname wird mit asynchronem SHA-256 berechnet: kurz warten, bis die Aufloesung durch ist.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 60))
+  const mountWithAudio = (controller) => mount(EasySpeaking, { props: { entry: entryOf() }, global: { provide: { [AUDIO_CONTROLLER_KEY]: controller } } })
+
+  it('Dateiname folgt dem App-Format <Bereich>__<ID>__s__<hash8>.mp3 und haengt vom Sprechtext ab', async () => {
+    const [exercise] = entryOf().library.exercises
+    const { s } = await getAudioFileNames('demo-speaking', speakingAudioItem(exercise, 'demo-speaking'))
+    expect(s).toMatch(/^demo-speaking__es-1__s__[0-9a-f]{8}\.mp3$/)
+    const changed = await getAudioFileNames('demo-speaking', speakingAudioItem({ ...exercise, modelAnswer: 'Another answer.' }, 'demo-speaking'))
+    expect(changed.s).not.toBe(s)
   })
 
-  it('zeigt einen Player nur, wenn "<ID>.mp3" geladen ist', () => {
-    const wrapper = mountSpeaking({ tracks: { 'es-1.mp3': { url: 'blob:es-1' } } })
-    expect(wrapper.get('audio').attributes('src')).toBe('blob:es-1')
+  it('Sprechtext: Antwort, Zielsatz bzw. alle Redebeitraege des Role Plays', () => {
+    const { exercises } = entryOf().library
+    expect(speakingSpokenText(exercises.find((entry) => entry.id === 'es-1'))).toBe('Demo answer one.')
+    expect(speakingSpokenText(exercises.find((entry) => entry.id === 'sb-1'))).toBe('If it rains, we stay at home.')
+    expect(speakingSpokenText(exercises.find((entry) => entry.id === 'rp-1'))).toBe('Demo line from A.\nDemo line from B.')
+  })
+
+  it('ohne Audio-Pack gibt es keinen Knopf', async () => {
+    const wrapper = mountSpeaking()
+    await wrapper.get('.practice-solution-toggle').trigger('click')
+    expect(wrapper.find('.speaking-play').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/anhören/)
+  })
+
+  it('Knopf nur bei vorhandener Datei und erst in der Musterantwort; spielt genau diese Datei', async () => {
+    const controller = fakeController((item) => item.id === 'es-1')
+    const wrapper = mountWithAudio(controller)
+    await settle()
+    expect(wrapper.find('.speaking-play').exists()).toBe(false) // vor der Musterantwort nie
+    await wrapper.get('.practice-solution-toggle').trigger('click')
+    await wrapper.get('.speaking-play').trigger('click')
+    expect(controller.played).toHaveLength(1)
+    expect(controller.played[0][0]).toMatch(/^demo-speaking__es-1__s__/)
+    await button(wrapper, 'Nächste').trigger('click') // es-2: keine Datei im Pack
+    await settle()
+    await wrapper.get('.practice-solution-toggle').trigger('click')
+    expect(wrapper.find('.speaking-play').exists()).toBe(false)
+  })
+
+  it('Audio aus (Einstellung) blendet den Knopf aus; Wechsel und Unmount stoppen die Wiedergabe', async () => {
+    const controller = fakeController(() => true)
+    const wrapper = mountWithAudio(controller)
+    await settle()
+    await wrapper.get('.practice-solution-toggle').trigger('click')
+    expect(wrapper.find('.speaking-play').exists()).toBe(true)
+    controller.audioEnabled.value = false
+    await settle()
+    expect(wrapper.find('.speaking-play').exists()).toBe(false)
+    controller.audioEnabled.value = true
+    await button(wrapper, 'Nächste').trigger('click')
+    expect(controller.stop).toHaveBeenCalled()
+    controller.stop.mockClear()
+    wrapper.unmount()
+    expect(controller.stop).toHaveBeenCalled()
   })
 })
 
