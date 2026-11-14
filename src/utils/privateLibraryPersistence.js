@@ -37,9 +37,10 @@ export const KIND_LABELS = Object.freeze({
   [LIBRARY_KIND.COACH]: 'Lerncoach',
   [LIBRARY_KIND.FIGURES]: 'Diagramm-Figuren',
   [LIBRARY_KIND.PRACTICE]: 'Übungen',
+  [LIBRARY_KIND.SPEAKING]: 'Easy Speaking',
 })
 
-// Quiz-Bibliotheken liegen je Lernbereich (areaId) in einem Platz, Lerncoach/Figuren/Uebungen je einmal -
+// Quiz-Bibliotheken liegen je Lernbereich (areaId) in einem Platz, Lerncoach/Figuren/Uebungen/Sprechuebungen je einmal -
 // genau wie die Register der App (libraryByAreaId bzw. ein einzelner Eintrag).
 export const storageKey = (kind, areaId) => (kind === LIBRARY_KIND.QUIZ ? `quiz:${areaId}` : kind)
 

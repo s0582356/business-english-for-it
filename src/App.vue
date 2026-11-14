@@ -9,6 +9,7 @@ import LearningNavigator from './components/LearningNavigator.vue'
 import CoachUnitList from './components/CoachUnitList.vue'
 import CoachRunner from './components/CoachRunner.vue'
 import ChartFigure from './components/ChartFigure.vue'
+import EasySpeaking from './components/EasySpeaking.vue'
 import { AUDIO_CONTROLLER_KEY, createAudioController } from './utils/audioController.js'
 import { PLAYBACK_RATE_MAX, PLAYBACK_RATE_MIN, PLAYBACK_RATE_STEP, formatPlaybackRate } from './utils/audioSettings.js'
 import { recordItemResult, saveLastPosition, getAreaItemStatuses, getLastPosition, resolveNextOpenTarget } from './utils/progressStorage.js'
@@ -106,7 +107,7 @@ onBeforeUnmount(() => {
   audio.dispose()
 })
 
-const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result' | 'coach' | 'coach-run'
+const view = ref('home') // 'home' | 'lessons' | 'scenarios' | 'run' | 'result' | 'coach' | 'coach-run' | 'speaking'
 
 // Lerncoach: eigene Bibliothek (nur im Speicher), eigener Fortschritt (coachStorage.js).
 const coachRegistry = ref({ entry: null, conflict: null })
@@ -142,6 +143,23 @@ const unmatchedFigureItems = computed(() => {
   if (!entry) return []
   return findUnmatchedBindings(entry, libraryRegistry.value.libraryByAreaId[entry.library.areaId])
 })
+
+// W3 Easy Speaking & Discussion: optionale private Datei (lokal gespeichert ueber den gemeinsamen Controller).
+// Der Lernstatus liegt separat im localStorage (speakingProgress.js); Aufnahmen (eigener Audio-Pack) koennen spaeter ueber die Prop "tracks" ergaenzt werden.
+const speakingRegistry = ref({ entry: null, conflict: null })
+const speakingReport = ref(null)
+
+function onSpeakingLoaded(result) {
+  speakingRegistry.value = { entry: result.entry, conflict: result.conflict }
+  speakingReport.value = result.report
+  // Verschwindet die Bibliothek (Konflikt, Entfernen) waehrend sie offen ist, zurueck zur Startansicht.
+  if (view.value === 'speaking' && (result.conflict || !result.entry)) view.value = 'home'
+}
+
+function openSpeaking() {
+  if (!speakingRegistry.value.entry || speakingRegistry.value.conflict) return
+  view.value = 'speaking'
+}
 
 function openCoach() {
   if (!coachRegistry.value.entry || coachRegistry.value.conflict) return
@@ -245,8 +263,8 @@ function onLibrariesLoaded(result) {
 }
 
 const privateLibraries = createPrivateLibraryController({
-  getRegistries: () => ({ quiz: libraryRegistry.value, coach: coachRegistry.value, figures: figureRegistry.value }),
-  apply: { quiz: onLibrariesLoaded, coach: onCoachLoaded, figures: onFiguresLoaded },
+  getRegistries: () => ({ quiz: libraryRegistry.value, coach: coachRegistry.value, figures: figureRegistry.value, speaking: speakingRegistry.value }),
+  apply: { quiz: onLibrariesLoaded, coach: onCoachLoaded, figures: onFiguresLoaded, speaking: onSpeakingLoaded },
 })
 onMounted(() => {
   privateLibraries.restore()
@@ -447,7 +465,10 @@ function backToHome() {
         :selected-group-id="selectedGroupId"
         :coach-entry="coachRegistry.entry"
         :coach-conflict="coachRegistry.conflict"
+        :speaking-entry="speakingRegistry.entry"
+        :speaking-conflict="speakingRegistry.conflict"
         @open-coach="openCoach"
+        @open-speaking="openSpeaking"
         @open-area="openArea"
         @resume-area="resumeArea"
         @open-group="openGroup"
@@ -460,8 +481,10 @@ function backToHome() {
         :current-registry="libraryRegistry"
         :current-coach="coachRegistry"
         :current-figures="figureRegistry"
+        :current-speaking="speakingRegistry"
         @coach-loaded="onCoachLoaded"
         @figures-loaded="onFiguresLoaded"
+        @speaking-loaded="onSpeakingLoaded"
         @libraries-loaded="onLibrariesLoaded"
         @audio-pack-loaded="onAudioPackImported"
       />
@@ -506,6 +529,14 @@ function backToHome() {
         <p v-for="entry in figureReport?.errors ?? []" :key="'figure-error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }} Die Aufgaben bleiben unverändert nutzbar.</p>
         <p v-if="unmatchedFigureItems.length" class="feedback-wrong">Hinweis: {{ unmatchedFigureItems.length }} Figur-Bindung(en) passen zu keiner geladenen Aufgabe ({{ unmatchedFigureItems.join(', ') }}).</p>
       </section>
+      <section v-if="speakingReport || speakingRegistry.conflict" class="import-report" aria-label="Sprechübungs-Bericht">
+        <p v-for="entry in speakingReport?.loaded ?? []" :key="'speaking-loaded-' + entry.fileName" class="explanation">Easy Speaking geladen: {{ entry.fileName }}</p>
+        <p v-for="entry in speakingReport?.upgrades ?? []" :key="'speaking-upgrade-' + entry.fileName" class="explanation">Easy Speaking aktualisiert auf Version {{ entry.libraryVersion }} (Lernstatus bleibt erhalten)</p>
+        <p v-for="entry in speakingReport?.duplicates ?? []" :key="'speaking-dup-' + entry.fileName" class="explanation">Easy-Speaking-Duplikat übersprungen: {{ entry.fileName }}</p>
+        <p v-for="entry in speakingReport?.ignored ?? []" :key="'speaking-ignored-' + entry.fileName" class="explanation">Easy Speaking ignoriert (ältere Version als die geladene oder eine andere gewählte Datei): {{ entry.fileName }}</p>
+        <p v-for="entry in speakingReport?.conflicts ?? []" :key="'speaking-conflict-' + entry.fileName" class="feedback-wrong">Konflikt bei Easy Speaking: „{{ entry.fileName }}" widerspricht einer anderen Sprech-Datei. Es werden keine Sprechübungen angeboten.</p>
+        <p v-for="entry in speakingReport?.errors ?? []" :key="'speaking-error-' + entry.fileName" class="feedback-wrong">Fehler in {{ entry.fileName }}: {{ entry.reason }}</p>
+      </section>
     </section>
 
     <CoachUnitList
@@ -534,6 +565,13 @@ function backToHome() {
       @start-scenario="startScenario"
       @back-to-areas="backToAreas"
       @back-to-lessons="backToLessons"
+    />
+
+    <EasySpeaking
+      v-else-if="view === 'speaking' && speakingRegistry.entry && !speakingRegistry.conflict"
+      :key="`${speakingRegistry.entry.library.libraryId}@${speakingRegistry.entry.library.libraryVersion}`"
+      :entry="speakingRegistry.entry"
+      @back="view = 'home'"
     />
 
     <section v-else-if="view === 'run' && currentItem" class="quiz-layout">

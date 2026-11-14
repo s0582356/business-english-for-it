@@ -11,9 +11,11 @@ const props = defineProps({
   selectedLessonId: { type: String, default: null },
   coachEntry: { type: Object, default: null },
   coachConflict: { type: Object, default: null },
+  speakingEntry: { type: Object, default: null },
+  speakingConflict: { type: Object, default: null },
 })
 
-const emit = defineEmits(['open-area', 'resume-area', 'open-group', 'back-to-groups', 'open-lesson', 'start-scenario', 'back-to-areas', 'back-to-lessons', 'request-import', 'open-coach'])
+const emit = defineEmits(['open-area', 'resume-area', 'open-group', 'back-to-groups', 'open-lesson', 'start-scenario', 'back-to-areas', 'back-to-lessons', 'request-import', 'open-coach', 'open-speaking'])
 
 const knownAreas = [
   { id: 'telephoning', icon: '📞', title: 'Business Telephoning' },
@@ -52,6 +54,12 @@ const COACH_GROUP_ID = 'w3'
 const coachCard = computed(() => ({
   status: props.coachConflict ? 'conflict' : props.coachEntry ? 'loaded' : 'missing',
   unitCount: props.coachEntry?.library.units.length ?? 0,
+}))
+
+// Eigenstaendige Kachel "W3 – Easy Speaking & Discussion" in der W3-Gruppe (ebenfalls kein Bereich im Sinne der Zaehler).
+const speakingCard = computed(() => ({
+  status: props.speakingConflict ? 'conflict' : props.speakingEntry ? 'loaded' : 'missing',
+  exerciseCount: props.speakingEntry?.library.exercises.length ?? 0,
 }))
 
 const groupCards = computed(() => areaGroups.map((group) => {
@@ -144,6 +152,24 @@ function lessonItemCount(lesson) { return lesson.scenarios.reduce((count, scenar
         <template v-else>
           <p class="coach-card-status">Noch nicht geladen</p>
           <p class="navigator-meta">Für den Lerncoach ist noch keine Bibliothek geladen.</p>
+          <button type="button" class="secondary-button" @click="emit('request-import')">Lernbibliotheken laden</button>
+        </template>
+      </article>
+      <article v-if="selectedGroup && selectedGroup.id === COACH_GROUP_ID" class="navigator-card navigator-card-speaking" aria-label="W3 – Easy Speaking &amp; Discussion">
+        <span class="area-card-icon" aria-hidden="true">🗣️</span><h3>W3 – Easy Speaking &amp; Discussion</h3>
+        <template v-if="speakingCard.status === 'loaded'">
+          <p class="coach-card-status coach-card-status-loaded">Sprechübungen geladen</p>
+          <p class="navigator-meta">{{ speakingCard.exerciseCount }} Übungen · Easy Speaking, Role Play, Discussion, Graph Description, Sentence Builder</p>
+          <button type="button" class="primary-button" @click="emit('open-speaking')">Sprechübungen öffnen</button>
+        </template>
+        <template v-else-if="speakingCard.status === 'conflict'">
+          <p class="coach-card-status coach-card-status-conflict">⚠ Konflikt bei der Sprech-Bibliothek</p>
+          <p class="navigator-meta">Mehrere unterschiedliche Sprech-Bibliotheken wurden erkannt.</p>
+          <button type="button" class="secondary-button" @click="emit('request-import')">Lernbibliotheken laden</button>
+        </template>
+        <template v-else>
+          <p class="coach-card-status">Noch nicht geladen</p>
+          <p class="navigator-meta">Für die Sprechübungen ist noch keine Bibliothek geladen.</p>
           <button type="button" class="secondary-button" @click="emit('request-import')">Lernbibliotheken laden</button>
         </template>
       </article>

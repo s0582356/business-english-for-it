@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, shallowRef } from 'vue'
 import { loadAudioPacks, splitImportFiles } from '../utils/audioPack.js'
 import { EMPTY_COACH_REGISTRY } from '../utils/coachImport.js'
 import { EMPTY_FIGURE_REGISTRY } from '../utils/figureImport.js'
+import { EMPTY_SPEAKING_REGISTRY } from '../utils/speakingImport.js'
 import { createPrivateLibraryController, storeProblemText } from '../utils/privateLibraryController.js'
 import { KIND_LABELS } from '../utils/privateLibraryPersistence.js'
 
@@ -19,6 +20,10 @@ const props = defineProps({
     type: Object,
     default: () => EMPTY_FIGURE_REGISTRY,
   },
+  currentSpeaking: {
+    type: Object,
+    default: () => EMPTY_SPEAKING_REGISTRY,
+  },
   // Die App stellt einen App-weiten Controller bereit (Wiederherstellen beim Start, lokale Speicherung).
   // Ohne ihn arbeitet der Importer eigenstaendig und meldet Ergebnisse wie bisher ueber Events.
   controller: {
@@ -27,17 +32,18 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['libraries-loaded', 'audio-pack-loaded', 'coach-loaded', 'figures-loaded'])
+const emit = defineEmits(['libraries-loaded', 'audio-pack-loaded', 'coach-loaded', 'figures-loaded', 'speaking-loaded'])
 const fileInput = ref(null)
 
 const controller =
   props.controller ??
   createPrivateLibraryController({
-    getRegistries: () => ({ quiz: props.currentRegistry, coach: props.currentCoach, figures: props.currentFigures }),
+    getRegistries: () => ({ quiz: props.currentRegistry, coach: props.currentCoach, figures: props.currentFigures, speaking: props.currentSpeaking }),
     apply: {
       quiz: (result) => emit('libraries-loaded', result),
       coach: (result) => emit('coach-loaded', result),
       figures: (result) => emit('figures-loaded', result),
+      speaking: (result) => emit('speaking-loaded', result),
     },
   })
 const stored = controller.state
@@ -110,7 +116,7 @@ function dateText(timestamp) {
 
 function activeVersionOf(record) {
   if (record.kind === 'quiz') return props.currentRegistry.libraryByAreaId?.[record.areaId]?.library.libraryVersion ?? null
-  const registry = { coach: props.currentCoach, figures: props.currentFigures }[record.kind]
+  const registry = { coach: props.currentCoach, figures: props.currentFigures, speaking: props.currentSpeaking }[record.kind]
   return registry?.entry?.library.libraryVersion ?? null
 }
 
@@ -199,7 +205,7 @@ const checkedLine = computed(() => {
         <h2>Lernbibliotheken laden</h2>
         <p>
           Wähle eine oder mehrere private JSON-Dateien aus (auch die optionale
-          Figuren-Datei), bei Bedarf zusammen mit dem Audio-Pack (.zip). Jede Datei wird einzeln geprüft und nur im Browser
+          Figuren- und Sprech-Datei), bei Bedarf zusammen mit dem Audio-Pack (.zip). Jede Datei wird einzeln geprüft und nur im Browser
           gelesen - nicht hochgeladen. Gültige JSON-Bibliotheken merkt sich die App zusätzlich
           nur auf diesem Gerät, ebenso gültige Audio-Packs (.zip).
         </p>

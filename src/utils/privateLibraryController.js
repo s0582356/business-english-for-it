@@ -37,8 +37,8 @@ export function storeProblemText(code) {
   return STORE_PROBLEM_TEXT[code] ?? STORE_PROBLEM_TEXT[STORE_ERROR.FAILED]
 }
 
-// `getRegistries()` -> { quiz, coach, figures, practice } (aktueller Stand der App).
-// `apply` -> { quiz, coach, figures, practice }: uebernimmt ein Importergebnis in die App.
+// `getRegistries()` -> { quiz, coach, figures, practice, speaking } (aktueller Stand der App).
+// `apply` -> { quiz, coach, figures, practice, speaking }: uebernimmt ein Importergebnis in die App.
 // `sync`: Kanal zur Synchronisierung mit anderen Instanzen (Standard: BroadcastChannel/storage/Sichtbarkeit);
 // `null` schaltet sie ab - der atomare Schutz im Speicher haengt nicht davon ab.
 export function createPrivateLibraryController({ persistence = createLibraryPersistence(), getRegistries, apply, sync = createSyncChannel(), now = () => Date.now() }) {
@@ -72,6 +72,7 @@ export function createPrivateLibraryController({ persistence = createLibraryPers
     quiz: (result) => !disposed && apply.quiz({ ...result, report: null }),
     coach: (result) => !disposed && apply.coach({ ...result, report: null }),
     figures: (result) => !disposed && apply.figures({ ...result, report: null }),
+    speaking: (result) => !disposed && apply.speaking({ ...result, report: null }),
   }
 
   function isActive(record) {

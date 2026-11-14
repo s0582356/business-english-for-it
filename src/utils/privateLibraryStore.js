@@ -5,7 +5,7 @@
 // abweichenden Lesepfad. Die Daten verlassen das Geraet nie: kein fetch, kein Backend, keine externen Dienste.
 //
 // Nicht Gegenstand dieses Speichers: Audio-Dateien (.mp3) und Audio-Pakete (.zip). Der Speicher akzeptiert nur die
-// vier JSON-Arten (QUIZ, COACH, FIGURES, PRACTICE).
+// fuenf JSON-Arten (QUIZ, COACH, FIGURES, PRACTICE, SPEAKING).
 //
 // Atomar und versionssicher (Auftrag 091): Jede Schreibaktion ist genau EINE readwrite-Transaktion, in der der
 // aktuell gespeicherte Datensatz gelesen, mit dem eingehenden verglichen und nur dann geschrieben bzw. geloescht wird.
@@ -28,7 +28,7 @@ export const STORED_SCHEMA_VERSION = 1
 const OBJECT_STORE = 'libraries'
 const DEFAULT_OPEN_TIMEOUT_MS = 8000
 
-export const LIBRARY_KIND = Object.freeze({ QUIZ: 'quiz', COACH: 'coach', FIGURES: 'figures', PRACTICE: 'practice' })
+export const LIBRARY_KIND = Object.freeze({ QUIZ: 'quiz', COACH: 'coach', FIGURES: 'figures', PRACTICE: 'practice', SPEAKING: 'speaking' })
 const KINDS = Object.values(LIBRARY_KIND)
 
 export const STORE_ERROR = Object.freeze({ UNAVAILABLE: 'unavailable', QUOTA: 'quota', BLOCKED: 'blocked', FAILED: 'failed' })

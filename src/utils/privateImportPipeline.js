@@ -10,6 +10,7 @@
 import { importLibraryFiles } from './libraryImport.js'
 import { importCoachFiles, partitionCoachFiles } from './coachImport.js'
 import { importFigureFiles, partitionFigureFiles } from './figureImport.js'
+import { importSpeakingFiles, partitionSpeakingFiles } from './speakingImport.js'
 import { LIBRARY_KIND } from './privateLibraryStore.js'
 
 const failureReport = (files, error) => ({
@@ -21,8 +22,8 @@ const failureReport = (files, error) => ({
   errors: files.map((file) => ({ fileName: file.name, reason: error?.message || 'Unbekannter Fehler beim Lesen.' })),
 })
 
-// `getRegistries()` liefert den aktuellen Stand { quiz, coach, figures, practice }. Die Reihenfolge der Vorgaenge
-// (Bibliotheken zuerst, dann Lerncoach, Figuren, Uebungen) entspricht dem bisherigen Import.
+// `getRegistries()` liefert den aktuellen Stand { quiz, coach, figures, speaking }. Die Reihenfolge der Vorgaenge
+// (Bibliotheken zuerst, dann Lerncoach, Figuren, Sprechuebungen) entspricht dem bisherigen Import.
 export async function runJsonImport(jsonFiles, getRegistries, apply) {
   const outcomes = []
   // Lerncoach-Bibliotheken (type "businessEnglishCoach") laufen ueber denselben Dateiwaehler,
@@ -31,8 +32,8 @@ export async function runJsonImport(jsonFiles, getRegistries, apply) {
   // Diagramm-Figuren (type "businessEnglishFigures"): eigene optionale Datei, getrennt importiert, damit ein
   // fehlerhafter Figuren-Import die Quiz-Bibliotheken nie beeintraechtigt.
   const { figureFiles, otherFiles: nonFigureFiles } = await partitionFigureFiles(nonCoachFiles)
-  // Uebungseinheiten (type "businessEnglishPractice"): ebenfalls eigene optionale Datei.
-  const libraryFiles = nonFigureFiles
+  // Sprechuebungen (type "businessEnglishEasySpeaking"): ebenfalls eigene optionale Datei.
+  const { speakingFiles, otherFiles: libraryFiles } = await partitionSpeakingFiles(nonFigureFiles)
 
   if (libraryFiles.length > 0) {
     const result = await importLibraryFiles(libraryFiles, getRegistries().quiz)
@@ -54,6 +55,17 @@ export async function runJsonImport(jsonFiles, getRegistries, apply) {
     }
     apply.figures(result)
     outcomes.push({ kind: LIBRARY_KIND.FIGURES, files: figureFiles, result })
+  }
+  if (speakingFiles.length > 0) {
+    let result
+    try {
+      result = await importSpeakingFiles(speakingFiles, getRegistries().speaking)
+    } catch (error) {
+      const current = getRegistries().speaking ?? {}
+      result = { ...current, entry: current.entry ?? null, conflict: current.conflict ?? null, report: failureReport(speakingFiles, error) }
+    }
+    apply.speaking(result)
+    outcomes.push({ kind: LIBRARY_KIND.SPEAKING, files: speakingFiles, result })
   }
   return outcomes
 }
